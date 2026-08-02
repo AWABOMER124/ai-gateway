@@ -7,8 +7,11 @@ import os
 import aiosmtplib
 from email.message import EmailMessage
 from app.services.audit_log import log_action
-from app.services import email_store, olivery_edit_store
+from app.services import email_store, olivery_edit_store, waslak_draft_store
 from app.services.olivery_client import OliveryClient, OliveryNotConfigured
+from app.services.waslak_client import (
+    WaslakClient, WaslakNotConfigured, WaslakAPIError, WaslakRateLimited, WaslakValidationError,
+)
 
 
 ALLOWED_ACTIONS = {
@@ -16,6 +19,7 @@ ALLOWED_ACTIONS = {
     "update_order_status",
     "mark_email_read",
     "save_draft",
+    "submit_waslak_draft",
 }
 
 
@@ -36,6 +40,8 @@ async def execute(task_id: str, action_type: str, payload: dict) -> dict:
         return {"success": False, "error": "Not implemented yet. Requires IMAP write access."}
     if action_type == "save_draft":
         return {"success": True, "message": "Draft saved to task store."}
+    if action_type == "submit_waslak_draft":
+        return await _submit_waslak_draft(task_id, payload)
 
     return {"success": False, "error": "Executor routing error."}
 
@@ -102,3 +108,51 @@ async def _update_order_status(task_id: str, payload: dict) -> dict:
         payload={"order_id": edit_request["order_id"], "vals": edit_request["vals"]}, status="executed",
     )
     return {"success": True, "message": f"Order {edit_request['order_id']} updated.", "result": result}
+
+
+async def _submit_waslak_draft(task_id: str, payload: dict) -> dict:
+    draft = await waslak_draft_store.get_draft_by_task(task_id)
+    if not draft:
+        return {"success": False, "error": "No staged Waslak store draft found for this task."}
+
+    validation_errors = draft.get("validation_errors") or []
+    if validation_errors:
+        return {
+            "success": False,
+            "error": f"Draft failed local validation, refusing to submit: {validation_errors}",
+        }
+
+    try:
+        client = WaslakClient()
+    except WaslakNotConfigured as e:
+        return {"success": False, "error": f"Waslak not configured: {e}"}
+
+    submit_payload = dict(draft["payload"])
+    submit_payload["prompt"] = draft["prompt"]
+
+    try:
+        result = await client.submit_draft(submit_payload)
+    except WaslakRateLimited as e:
+        await log_action(task_id=task_id, action="submit_waslak_draft", payload=payload, status=f"rate_limited: {e}")
+        return {"success": False, "error": f"Waslak rate limit hit (30/hour): {e}"}
+    except WaslakValidationError as e:
+        await log_action(task_id=task_id, action="submit_waslak_draft", payload=payload, status=f"validation_failed: {e}")
+        return {"success": False, "error": f"Waslak rejected draft (422): {e}"}
+    except WaslakAPIError as e:
+        await log_action(task_id=task_id, action="submit_waslak_draft", payload=payload, status=f"failed: {e}")
+        return {"success": False, "error": f"Waslak submit failed: {e}"}
+
+    await waslak_draft_store.update_remote_status(
+        local_id=draft["id"], waslak_draft_id=result.get("id"),
+        waslak_status=result.get("status", "PENDING"), merchant_id=None, rejection_reason=None,
+        approval_status="executed",
+    )
+    await log_action(
+        task_id=task_id, action="submit_waslak_draft",
+        payload={"local_id": str(draft["id"]), "waslak_draft_id": result.get("id")}, status="executed",
+    )
+    return {
+        "success": True,
+        "message": f"Store draft submitted to Waslak (id={result.get('id')}, status={result.get('status')}).",
+        "result": result,
+    }

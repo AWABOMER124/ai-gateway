@@ -16,6 +16,8 @@ INTENTS:
 - file_analysis: user wants to analyze an uploaded file (Excel, PDF, image)
 - knowledge_question: user asks a factual question answerable from the knowledge base
 - proposal: user wants a price proposal or business document
+- waslak_store_draft: user wants to generate a new online store, restaurant menu, or landing page draft for a merchant on Waslak — the user's message becomes the generation prompt; always risk_level medium or high (it becomes a real external StoreDraft on Waslak once approved), needs_approval always true
+- waslak_insights: user wants a merchant list, order stats, or improvement suggestions from Waslak — risk_level low, read-only, no approval needed
 - general: anything else (greet, brainstorm, advice)
 
 RISK LEVELS:
@@ -29,12 +31,13 @@ EXTRACTED FIELDS: pull structured values directly out of the user's message wher
 - to_email: recipient email address (for email_draft) — only if an actual address appears in the message
 - order_id: order/AWB/tracking number (for olivery_edit_order or order_tracking)
 - vals: object of order fields to change and their new values (for olivery_edit_order only), e.g. {"state": "delivered"}
+- merchant_id: Waslak merchant id (for waslak_insights) — only if an actual id/name appears in the message
 Omit any key you cannot confidently extract — list it in missing_fields instead of guessing.
 
 Return ONLY valid JSON:
 {
   "intent": "...",
-  "assigned_agent": "email_agent|olivery_agent|file_agent|knowledge_agent|writing_agent|general",
+  "assigned_agent": "email_agent|olivery_agent|file_agent|knowledge_agent|writing_agent|waslak_agent|general",
   "risk_level": "low|medium|high",
   "needs_approval": true|false,
   "missing_fields": [],

@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from app.schemas.approvals import ApprovalDecision, ApprovalStatus, PendingApproval
-from app.services import task_store, audit_log, olivery_edit_store
+from app.services import task_store, audit_log, olivery_edit_store, waslak_draft_store
 from app.agents import executor
 from app.routers._auth import require_api_key
 
@@ -50,6 +50,10 @@ async def decide(req: ApprovalDecision, _=Depends(require_api_key)):
             edit_request = await olivery_edit_store.get_edit_request_by_task(req.task_id)
             if edit_request:
                 action_type = "update_order_status"
+        elif assigned_agent == "waslak_agent":
+            draft = await waslak_draft_store.get_draft_by_task(req.task_id)
+            if draft:
+                action_type = "submit_waslak_draft"
 
         if action_type:
             execution = await executor.execute(task_id=req.task_id, action_type=action_type, payload={})
