@@ -5,9 +5,11 @@ from typing import Any
 class OliveryReportRequest(BaseModel):
     report_type: str
     filters: dict[str, Any] = {}
+    task_id: str | None = None
 
 
 class OliveryReportResponse(BaseModel):
+    report_id: str | None = None
     report_type: str
     filters: dict[str, Any]
     summary: str

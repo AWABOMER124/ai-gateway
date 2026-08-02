@@ -4,7 +4,7 @@ from app.schemas.olivery import (
     OliveryEditOrderRequest, OliveryEditOrderResponse,
 )
 from app.agents import olivery_agent
-from app.services import audit_log, olivery_edit_store
+from app.services import audit_log, olivery_edit_store, olivery_report_store
 from app.routers._auth import require_api_key
 
 router = APIRouter(prefix="/olivery", tags=["Olivery"])
@@ -16,11 +16,18 @@ async def olivery_report(req: OliveryReportRequest, _=Depends(require_api_key)):
         report_type=req.report_type,
         filters=req.filters,
     )
-    await audit_log.log_action(
-        task_id=None, action="olivery_report",
-        payload={"report_type": req.report_type, "filters": req.filters}, status="ok",
+    report_id = await olivery_report_store.save_report(
+        task_id=req.task_id,
+        report_type=result["report_type"],
+        filters=result["filters"],
+        summary=result["summary"],
+        rows=result["rows"],
     )
-    return OliveryReportResponse(**result)
+    await audit_log.log_action(
+        task_id=req.task_id, action="olivery_report",
+        payload={"report_id": report_id, "report_type": req.report_type, "filters": req.filters}, status="ok",
+    )
+    return OliveryReportResponse(report_id=report_id, **result)
 
 
 @router.post("/edit-order", response_model=OliveryEditOrderResponse)
