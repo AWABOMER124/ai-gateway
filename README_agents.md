@@ -469,3 +469,22 @@ SELECT date_trunc('day', created_at) AS day, endpoint, model,
 FROM openai_usage_log
 GROUP BY 1,2,3 ORDER BY 1 DESC, cost_usd DESC;
 ```
+
+## اختبار دخان بعد كل نشر (Smoke Test)
+
+```bash
+./scripts/smoke_test.sh
+```
+
+يفحص: صحة الحاوية، `/health`، `/agent/plan`، `/files/analyze-text`،
+`/email/draft`، `/olivery/report`، `/waslak/merchants`، `/waslak/store-draft`،
+و`/ask` — كل هذي فحوصات **آمنة** (لا ترسل إيميل حقيقي، لا تعدّل طلب Olivery
+فعلياً، ولا ترسل مسودة لواصلك) لأنها لا تنادي `/approvals/decide` بـ
+`approved: true` (هذا وحده يُنفّذ فعل خارجي حقيقي — اختبره يدوياً لما تحتاج
+فعلاً تتأكد من التنفيذ الكامل، مش تلقائياً بعد كل نشر).
+
+يرجع كود خروج `0` لو كل الفحوصات نجحت، أو `1` لو فشل أي واحد منها — مناسب
+لبوابة CI/CD. **لماذا أضيف هذا:** طول جلسة 2026-08-02/03، أعطال زي مكتبة
+Python ناقصة، migration غير مُطبَّقة، وخلل استيراد كانوا يظهروا فقط لما نجرب
+endpoint يدوياً بالصدفة — هذا السكريبت يكشفهم تلقائياً بعد كل `docker compose
+up -d --build` بدل الاعتماد على التجربة اليدوية.
