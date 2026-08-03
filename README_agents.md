@@ -350,16 +350,20 @@ waslak_store_drafts    — مسودات متاجر Waslak المُقترَحة (
 waslak_insights        — تحليلات/اقتراحات تحسين محفوظة لكل تاجر Waslak
 ```
 
-Run migrations (بالترتيب — كل ملف يفترض سابقه):
+Run migrations:
 ```bash
-psql $DATABASE_URL -f migrations/005_agent_tables.sql
-psql $DATABASE_URL -f migrations/006_approval_flow.sql
-psql $DATABASE_URL -f migrations/007_waslak.sql
+./scripts/run_migrations.sh
 ```
 
-> **تنبيه:** الـ migrations لازم تُنفَّذ فعلياً على قاعدة البيانات — وجود الملف بمجلد
-> `migrations/` لا يعني أنه اتنفّذ. تحقق بـ `\dt` أو `information_schema.tables` قبل
-> الاعتماد على وجود أي جدول.
+يُطبّق أي ملف بمجلد `migrations/` لسه مش مسجّل بجدول `schema_migrations`، بترتيب
+اسم الملف، ويسجّله بعد التطبيق. **آمن يتكرر تشغيله** — كل ملفات هذا المشروع
+مكتوبة idempotent (`CREATE TABLE/INDEX/COLUMN IF NOT EXISTS`)، فإعادة تطبيق ملف
+مطبَّق أصلاً لا يفعل شيء. شغّله بعد كل `git pull`/نشر بدل تخمين أي ملف جديد يدوياً.
+
+> **لماذا أضيف هذا:** migration 006 كاملها ظلّت غير مُطبَّقة على قاعدة البيانات
+> الفعلية لأسابيع رغم وجود ملفها بالمستودع طول الوقت — واكتُشفت بالصدفة فقط لما
+> `/agent/plan` طاح بخطأ 500 (عمود `channel_ref` غير موجود). ما كان فيه أي طريقة
+> نعرف فيها أي ملف اتنفذ فعلاً مقابل أي ملف موجود بس بالمجلد.
 
 ## متغيرات البيئة الإضافية (Waslak)
 
