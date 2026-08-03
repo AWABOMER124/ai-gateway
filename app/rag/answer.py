@@ -7,6 +7,7 @@ from typing import Optional
 
 from app.config import settings
 from app.rag.prompt_builder import SYSTEM_PROMPT, build_user_prompt
+from app.services import openai_usage
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +28,8 @@ def generate_answer(
     if not settings.openai_api_key:
         raise EnvironmentError('OPENAI_API_KEY غير موجود في .env')
 
+    openai_usage.check_spend_cap_sync()
+
     import openai
     client = openai.OpenAI(api_key=settings.openai_api_key)
 
@@ -42,7 +45,15 @@ def generate_answer(
             temperature=0.3,
         )
         answer = response.choices[0].message.content or ''
-        tokens = response.usage.total_tokens if response.usage else 0
+        usage = response.usage
+        tokens = usage.total_tokens if usage else 0
+        openai_usage.record_usage_sync(
+            endpoint='chat',
+            model=settings.chat_model,
+            prompt_tokens=usage.prompt_tokens if usage else None,
+            completion_tokens=usage.completion_tokens if usage else None,
+            total_tokens=tokens,
+        )
         return answer, tokens
 
     except openai.AuthenticationError:

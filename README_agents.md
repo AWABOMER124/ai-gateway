@@ -348,6 +348,7 @@ file_artifacts         — نتائج تحليل الملفات
 audit_log              — سجل لا يُمسح لكل إجراء
 waslak_store_drafts    — مسودات متاجر Waslak المُقترَحة (لا تُرسل لواصلك بدون موافقة)
 waslak_insights        — تحليلات/اقتراحات تحسين محفوظة لكل تاجر Waslak
+openai_usage_log       — سجل كل استدعاء OpenAI (chat/embedding) + السعر التقديري
 ```
 
 Run migrations:
@@ -428,3 +429,33 @@ deploy:
 docker inspect awab-ai-gateway --format 'Memory={{.HostConfig.Memory}} NanoCpus={{.HostConfig.NanoCpus}}'
 ```
 يجب أن يرجع `Memory=1073741824 NanoCpus=1000000000` — لو رجع `0 0` فالحد غير مطبَّق.
+
+## سقف إنفاق OpenAI
+
+كل استدعاء OpenAI بالمشروع — طبقة الـ agents (`_openai_chat` بـ
+`app/agents/__init__.py`) وأيضاً pipeline الـ RAG الأصلي (`/ask`, `/search` —
+`generate_answer` و`get_embedding`) — يمر الآن عبر سقف يومي مضبوط بـ:
+
+```
+OPENAI_DAILY_SPEND_LIMIT_USD=10.0   # 0 أو رقم سالب = تعطيل السقف (التسجيل يستمر دائماً)
+```
+
+كل استدعاء يُسجَّل بجدول `openai_usage_log` (النوع، الموديل، عدد التوكنز،
+السعر التقديري) قبل أي شي — سابقاً ما كان فيه أي سقف ولا أي سجل استخدام إطلاقاً.
+لو انضرب السقف، `/agent/*` و`/waslak/*` وغيرهم يرجّعوا `429` واضح
+(`SpendLimitExceeded` معالَج عالمياً بـ `app/main.py`)؛ أما `/ask` و`/search`
+(كودهم أقدم وله معالجة أخطاء خاصة به) يرجّعوا `500` بنفس نص الرسالة — أقل
+اتساقاً بس لسه واضح.
+
+**تنبيه:** الأسعار بجدول `PRICING_PER_1K` (`app/services/openai_usage.py`)
+تقديرية وقت الكتابة، مش فوترة رسمية — حدّثها لو تغيّرت أسعار OpenAI المعلنة أو
+تغيّر `CHAT_MODEL`/`EMBEDDING_MODEL`. الهدف هون قاطع أمان يمنع فاتورة مفاجئة،
+مش محاسبة دقيقة.
+
+راجع الإنفاق اليومي:
+```sql
+SELECT date_trunc('day', created_at) AS day, endpoint, model,
+       count(*) AS calls, sum(estimated_cost_usd) AS cost_usd
+FROM openai_usage_log
+GROUP BY 1,2,3 ORDER BY 1 DESC, cost_usd DESC;
+```

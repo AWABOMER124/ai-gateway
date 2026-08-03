@@ -3,12 +3,14 @@ main.py — FastAPI application entry point.
 """
 
 import logging
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from app.routers import health, ask, search
 from app.routers import agent as agent_r, email as email_r, olivery as olivery_r, files as files_r, approvals as approvals_r
 from app.routers import waslak as waslak_r
+from app.services.openai_usage import SpendLimitExceeded
 
 
 logging.basicConfig(
@@ -38,6 +40,11 @@ app.include_router(search.router, tags=['Search'])
 @app.get('/', include_in_schema=False)
 def root():
     return {'message': 'Awab AI Operator API — اذهب إلى /docs'}
+
+
+@app.exception_handler(SpendLimitExceeded)
+async def spend_limit_handler(request: Request, exc: SpendLimitExceeded):
+    return JSONResponse(status_code=429, content={'detail': str(exc)})
 
 app.include_router(agent_r.router, tags=['Agent'])
 app.include_router(email_r.router, tags=['Email'])

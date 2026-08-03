@@ -6,6 +6,7 @@ import os
 import json
 import httpx
 from typing import Any
+from app.services import openai_usage
 
 
 async def _openai_chat(
@@ -18,6 +19,9 @@ async def _openai_chat(
     if not api_key:
         raise RuntimeError("OPENAI_API_KEY not set")
     model = model or os.getenv("CHAT_MODEL", "gpt-4.1-mini")
+
+    await openai_usage.check_spend_cap()
+
     payload: dict[str, Any] = {"model": model, "messages": messages, "max_tokens": max_tokens}
     if json_mode:
         payload["response_format"] = {"type": "json_object"}
@@ -28,7 +32,17 @@ async def _openai_chat(
             json=payload,
         )
         r.raise_for_status()
-        return r.json()["choices"][0]["message"]["content"]
+        data = r.json()
+
+    usage = data.get("usage") or {}
+    await openai_usage.record_usage(
+        endpoint="chat",
+        model=model,
+        prompt_tokens=usage.get("prompt_tokens"),
+        completion_tokens=usage.get("completion_tokens"),
+        total_tokens=usage.get("total_tokens"),
+    )
+    return data["choices"][0]["message"]["content"]
 
 
 def _parse_json(text: str) -> dict:

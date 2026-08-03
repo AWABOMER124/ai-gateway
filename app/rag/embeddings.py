@@ -5,6 +5,7 @@ rag/embeddings.py — توليد embedding vector لنص واحد.
 import time
 import logging
 from app.config import settings
+from app.services import openai_usage
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +27,8 @@ def get_embedding(text: str) -> list[float]:
     if not settings.openai_api_key:
         raise EnvironmentError('OPENAI_API_KEY غير موجود في .env')
 
+    openai_usage.check_spend_cap_sync()
+
     import openai
     client = openai.OpenAI(api_key=settings.openai_api_key)
 
@@ -38,6 +41,13 @@ def get_embedding(text: str) -> list[float]:
                 model=settings.embedding_model,
                 input=text,
                 encoding_format='float',
+            )
+            usage = getattr(response, 'usage', None)
+            openai_usage.record_usage_sync(
+                endpoint='embedding',
+                model=settings.embedding_model,
+                prompt_tokens=getattr(usage, 'prompt_tokens', None) if usage else None,
+                total_tokens=getattr(usage, 'total_tokens', None) if usage else None,
             )
             return response.data[0].embedding
 
