@@ -333,6 +333,16 @@ Executor ينفذ (إرسال إيميل، تحديث بيانات، ...)
 
 **القاعدة:** أي action خارجي (إرسال إيميل، تعديل بيانات) يحتاج موافقة صريحة.
 
+> **Reviewer إلزامي فعلياً منذ 2026-08-03، مش بس اختياري حسب n8n:** سابقاً
+> `POST /agent/review` كان endpoint منفصل يعتمد على n8n يستدعيه بنفسه بعد كل
+> agent — لو نسي/تخطاه (زي ما صار طول هذه الجلسة عبر curl مباشر)، التنفيذ
+> كان يصير بدون أي مراجعة جودة إطلاقاً. الآن `POST /approvals/decide` نفسه
+> ينادي الـ Reviewer تلقائياً كبوابة أخيرة قبل أي تنفيذ فعلي
+> (`send_email`/`update_order_status`/`submit_waslak_draft`) — بغض النظر هل
+> `/agent/review` انستُدعي قبلها ولا لأ. لو الـ Reviewer رفض، الحالة تصير
+> `rejected_by_reviewer` والـ Executor ما ينادى إطلاقاً. النتيجة محفوظة
+> بـ `ai_reviews` وترجع بحقل `review` من استجابة `/approvals/decide`.
+
 ---
 
 ## Database Tables

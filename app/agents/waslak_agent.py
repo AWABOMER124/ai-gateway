@@ -6,7 +6,10 @@ Never calls Waslak directly. Store-draft submission is a real external write and
 happens from app.agents.executor after Awab approves via /approvals/decide.
 """
 import json
+import re
 from app.agents import _openai_chat, _parse_json
+
+_HEX_COLOR_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
 
 DRAFT_SYSTEM = """
 You are a store-setup assistant for Waslak Merchant OS, a delivery/e-commerce SaaS platform.
@@ -54,6 +57,15 @@ async def generate_store_draft(prompt: str, business_type: str | None = None) ->
     )
     payload = _parse_json(raw)
     payload["prompt"] = prompt  # Waslak requires the original prompt string on submit
+
+    # primaryColor is optional on Waslak's side, but GPT sometimes emits an
+    # empty string instead of omitting it, which Waslak's stricter server-side
+    # check 422s on. Treat "present but not a valid hex color" as "not given"
+    # rather than blocking the whole draft over an optional cosmetic field.
+    color = payload.get("primaryColor") or ""
+    if "primaryColor" in payload and not _HEX_COLOR_RE.match(color):
+        payload.pop("primaryColor", None)
+
     payload["_validation_errors"] = _validate_draft(payload)
     return payload
 

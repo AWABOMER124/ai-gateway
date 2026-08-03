@@ -1,7 +1,8 @@
+import json
 from fastapi import APIRouter, Depends, HTTPException, Query
 from app.schemas.approvals import ApprovalDecision, ApprovalStatus, PendingApproval
-from app.services import task_store, audit_log, olivery_edit_store, waslak_draft_store
-from app.agents import executor
+from app.services import task_store, audit_log, email_store, olivery_edit_store, waslak_draft_store
+from app.agents import executor, reviewer
 from app.routers._auth import require_api_key
 
 router = APIRouter(prefix="/approvals", tags=["Approvals"])
@@ -41,23 +42,46 @@ async def decide(req: ApprovalDecision, _=Depends(require_api_key)):
         raise HTTPException(status_code=404, detail=f"Task {req.task_id} not found")
 
     execution = None
+    review_result = None
     if req.approved:
         action_type = None
+        review_content = ""
         assigned_agent = task.get("assigned_agent")
+
         if assigned_agent == "email_agent":
             action_type = "send_email"
+            draft = await email_store.get_draft_by_task(req.task_id)
+            review_content = (draft or {}).get("draft_body", "")
         elif assigned_agent == "olivery_agent":
             edit_request = await olivery_edit_store.get_edit_request_by_task(req.task_id)
             if edit_request:
                 action_type = "update_order_status"
+                review_content = edit_request.get("preview", "")
         elif assigned_agent == "waslak_agent":
             draft = await waslak_draft_store.get_draft_by_task(req.task_id)
             if draft:
                 action_type = "submit_waslak_draft"
+                review_content = json.dumps(draft.get("payload") or {}, ensure_ascii=False)
 
         if action_type:
-            execution = await executor.execute(task_id=req.task_id, action_type=action_type, payload={})
-            new_status = "executed" if execution.get("success") else "execution_failed"
+            # Mandatory quality gate, enforced here rather than left to an
+            # external caller (e.g. n8n) to separately hit /agent/review —
+            # that made the Reviewer optional in practice. Runs regardless of
+            # whether /agent/review was ever called earlier for this task.
+            review_result = await reviewer.review(
+                task_id=req.task_id,
+                original_request=task.get("message", ""),
+                agent_output=review_content,
+                agent_name=assigned_agent,
+                risk_level=task.get("risk_level") or "medium",
+            )
+            await task_store.save_review(task_id=req.task_id, review=review_result)
+
+            if not review_result.get("approved"):
+                new_status = "rejected_by_reviewer"
+            else:
+                execution = await executor.execute(task_id=req.task_id, action_type=action_type, payload={})
+                new_status = "executed" if execution.get("success") else "execution_failed"
         else:
             new_status = "user_approved"
     else:
@@ -66,7 +90,7 @@ async def decide(req: ApprovalDecision, _=Depends(require_api_key)):
     await task_store.update_task_status(
         task_id=req.task_id,
         status=new_status,
-        output={"user_decision": req.approved, "note": req.note, "execution": execution},
+        output={"user_decision": req.approved, "note": req.note, "review": review_result, "execution": execution},
     )
     await audit_log.log_action(
         task_id=req.task_id, action="user_decision",
@@ -77,5 +101,6 @@ async def decide(req: ApprovalDecision, _=Depends(require_api_key)):
         status=new_status,
         intent=task.get("intent"),
         risk_level=task.get("risk_level"),
+        review=review_result,
         execution=execution,
     )
