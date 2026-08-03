@@ -23,6 +23,15 @@ services:
       - default
       - awab-ai-postgres_default
 
+    # Resource cap — this server also hosts the live Waslak Merchant OS
+    # production containers. Without a limit, a runaway GPT retry loop or a
+    # large file analysis here could starve them (host has 2 vCPU / 8GiB total).
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+          cpus: "1.0"
+
 networks:
   default: {}
   awab-ai-postgres_default:
