@@ -497,6 +497,20 @@ up -d --build` بدل الاعتماد على التجربة اليدوية.
 
 ## لوحة الفريق (Dashboard) — مفاتيح API نطاقية + جاهزية المهارات
 
+**الرابط العام:** https://ai-gateway.perfect-team.cloud/dashboard/login (HTTPS
+حقيقي عبر Let's Encrypt، مربوط بـ Traefik الموجود أصلاً على نفس السيرفر لباقي
+الخدمات). **لا تفتحه على `http://72.62.41.242:8000/dashboard/login` مباشرة**
+— الكوكيز مضبوطة `Secure` (`DASHBOARD_COOKIE_SECURE=true`)، فمتصفح حقيقي
+ما رح يخزّنها على اتصال HTTP عادي بدون TLS.
+
+> **ملاحظة بنية تحتية (مش جزء من هذا الريبو):** التوجيه مضبوط يدوياً بملف
+> `/etc/dokploy/traefik/dynamic/awab-ai-gateway-manual.yml` على السيرفر —
+> نفس نمط `chatwoot-manual.yml` الموجود أصلاً هناك (تكوين Traefik يدوي منفصل
+> عن تطبيقات Dokploy المُدارة تلقائياً). كان فيه تطبيق Dokploy قديم غير مكتمل
+> باسم `aigateway-aigateway-kdgx2b` يستخدم نفس الدومين — تم تعطيله (نُقل إلى
+> `.yml.disabled`) لتفادي تعارض التوجيه؛ نسخة احتياطية بـ
+> `/root/backups/traefik-dynamic-backup/`.
+
 `/dashboard` — واجهة ويب بسيطة (Jinja2، بلا build step) لفريق صغير:
 
 - **تسجيل دخول**: لا يوجد تسجيل ذاتي — أول مالك (owner) يُنشأ عبر:
