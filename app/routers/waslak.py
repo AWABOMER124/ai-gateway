@@ -6,13 +6,13 @@ from app.schemas.waslak import (
 from app.agents import waslak_agent
 from app.services import waslak_draft_store, waslak_insight_store, audit_log
 from app.services.waslak_client import WaslakClient, WaslakNotConfigured, WaslakAPIError
-from app.routers._auth import require_api_key
+from app.routers._auth import require_scope
 
 router = APIRouter(prefix="/waslak", tags=["Waslak"])
 
 
 @router.post("/store-draft", response_model=StoreDraftGenerateResponse)
-async def generate_store_draft(req: StoreDraftGenerateRequest, _=Depends(require_api_key)):
+async def generate_store_draft(req: StoreDraftGenerateRequest, _=Depends(require_scope("waslak:draft"))):
     payload = await waslak_agent.generate_store_draft(prompt=req.prompt, business_type=req.business_type)
     validation_errors = payload.pop("_validation_errors", [])
     local_id = await waslak_draft_store.save_draft(
@@ -29,7 +29,7 @@ async def generate_store_draft(req: StoreDraftGenerateRequest, _=Depends(require
 
 
 @router.get("/store-draft/{local_id}", response_model=StoreDraftStatusResponse)
-async def get_store_draft_status(local_id: str, _=Depends(require_api_key)):
+async def get_store_draft_status(local_id: str, _=Depends(require_scope("waslak:read"))):
     draft = await waslak_draft_store.get_draft(local_id)
     if not draft:
         raise HTTPException(status_code=404, detail=f"Draft {local_id} not found")
@@ -58,7 +58,7 @@ async def get_store_draft_status(local_id: str, _=Depends(require_api_key)):
 
 
 @router.get("/merchants", response_model=MerchantListResponse)
-async def list_merchants(_=Depends(require_api_key)):
+async def list_merchants(_=Depends(require_scope("waslak:read"))):
     try:
         merchants = await WaslakClient().list_merchants()
     except WaslakNotConfigured as e:
@@ -76,7 +76,7 @@ async def merchant_insights(
     merchant_id: str,
     merchant_name: str = Query(""),
     task_id: str | None = Query(None),
-    _=Depends(require_api_key),
+    _=Depends(require_scope("waslak:insights")),
 ):
     try:
         order_summary = await WaslakClient().get_merchant_orders(merchant_id)

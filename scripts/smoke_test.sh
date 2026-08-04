@@ -81,6 +81,12 @@ code=$(curl -s -o /dev/null -w '%{http_code}' -m 20 -X POST "$BASE/ask" \
     -d '{"question":"ما هي قواعد الوكيل؟","top_k":3}')
 check "POST /ask" "200" "$code"
 
+echo "== Dashboard (unauthenticated reachability only — no real login, no capability-test spend) =="
+code=$(curl -s -o /dev/null -w '%{http_code}' -m 10 "$BASE/dashboard/login")
+check "GET /dashboard/login" "200" "$code"
+code=$(curl -s -o /dev/null -w '%{http_code}' -m 10 "$BASE/dashboard")
+check "GET /dashboard (no session -> redirect)" "302" "$code"
+
 echo ""
 if [ "$FAILED" = "0" ]; then
     echo "All smoke checks passed."

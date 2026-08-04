@@ -2,13 +2,13 @@ from fastapi import APIRouter, Depends
 from app.schemas.agent import PlanRequest, PlanResponse, ReviewRequest, ReviewResponse
 from app.agents import supervisor, reviewer
 from app.services import task_store, audit_log
-from app.routers._auth import require_api_key
+from app.routers._auth import require_scope
 
 router = APIRouter(prefix="/agent", tags=["Agent"])
 
 
 @router.post("/plan", response_model=PlanResponse)
-async def plan_endpoint(req: PlanRequest, _=Depends(require_api_key)):
+async def plan_endpoint(req: PlanRequest, _=Depends(require_scope("agent:write"))):
     plan = await supervisor.plan(
         message=req.message,
         channel=req.channel,
@@ -27,7 +27,7 @@ async def plan_endpoint(req: PlanRequest, _=Depends(require_api_key)):
 
 
 @router.post("/review", response_model=ReviewResponse)
-async def review_endpoint(req: ReviewRequest, _=Depends(require_api_key)):
+async def review_endpoint(req: ReviewRequest, _=Depends(require_scope("agent:write"))):
     result = await reviewer.review(
         task_id=req.task_id,
         original_request=req.original_request,

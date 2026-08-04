@@ -3,13 +3,13 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from app.schemas.approvals import ApprovalDecision, ApprovalStatus, PendingApproval
 from app.services import task_store, audit_log, email_store, olivery_edit_store, waslak_draft_store
 from app.agents import executor, reviewer
-from app.routers._auth import require_api_key
+from app.routers._auth import require_scope
 
 router = APIRouter(prefix="/approvals", tags=["Approvals"])
 
 
 @router.get("/pending", response_model=PendingApproval)
-async def get_pending(channel_ref: str = Query(...), _=Depends(require_api_key)):
+async def get_pending(channel_ref: str = Query(...), _=Depends(require_scope("approvals:read"))):
     task = await task_store.get_pending_task(channel_ref)
     if not task:
         return PendingApproval(pending=False)
@@ -22,7 +22,7 @@ async def get_pending(channel_ref: str = Query(...), _=Depends(require_api_key))
 
 
 @router.get("/{task_id}", response_model=ApprovalStatus)
-async def get_approval_status(task_id: str, _=Depends(require_api_key)):
+async def get_approval_status(task_id: str, _=Depends(require_scope("approvals:read"))):
     task = await task_store.get_task(task_id)
     if not task:
         raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
@@ -36,7 +36,7 @@ async def get_approval_status(task_id: str, _=Depends(require_api_key)):
 
 
 @router.post("/decide", response_model=ApprovalStatus)
-async def decide(req: ApprovalDecision, _=Depends(require_api_key)):
+async def decide(req: ApprovalDecision, _=Depends(require_scope("approvals:decide"))):
     task = await task_store.get_task(req.task_id)
     if not task:
         raise HTTPException(status_code=404, detail=f"Task {req.task_id} not found")

@@ -2,13 +2,13 @@ from fastapi import APIRouter, Depends
 from app.schemas.email import EmailDraftRequest, EmailDraftResponse
 from app.agents import email_agent
 from app.services import email_store, audit_log
-from app.routers._auth import require_api_key
+from app.routers._auth import require_scope
 
 router = APIRouter(prefix="/email", tags=["Email"])
 
 
 @router.post("/draft", response_model=EmailDraftResponse)
-async def draft_email(req: EmailDraftRequest, _=Depends(require_api_key)):
+async def draft_email(req: EmailDraftRequest, _=Depends(require_scope("email:write"))):
     result = await email_agent.draft(
         email_subject=req.email_subject,
         email_body=req.email_body,

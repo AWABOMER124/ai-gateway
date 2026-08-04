@@ -2,13 +2,13 @@ from fastapi import APIRouter, Depends
 from app.schemas.files import FileAnalyzeRequest, FileAnalyzeResponse
 from app.agents import file_agent
 from app.services import file_processor, audit_log
-from app.routers._auth import require_api_key
+from app.routers._auth import require_scope
 
 router = APIRouter(prefix="/files", tags=["Files"])
 
 
 @router.post("/analyze-text", response_model=FileAnalyzeResponse)
-async def analyze_text(req: FileAnalyzeRequest, _=Depends(require_api_key)):
+async def analyze_text(req: FileAnalyzeRequest, _=Depends(require_scope("files:write"))):
     result = await file_agent.analyze_text(
         file_name=req.file_name,
         mime_type=req.mime_type,

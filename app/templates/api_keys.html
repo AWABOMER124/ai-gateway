@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block title %}مفاتيح API — Awab AI Office{% endblock %}
+{% block content %}
+<h1>مفاتيح API للربط الوارد</h1>
+<p class="muted">مفاتيح نطاقية (scoped) تسمح لمنتج خارجي بالاتصال بهذا النظام — كل مفتاح يشوف فقط الـ endpoints المسموحة بنطاقه.</p>
+
+{% if error == 'owner_only' %}<p class="error">إنشاء/إلغاء المفاتيح متاح لـ owner فقط.</p>{% endif %}
+
+{% if new_key %}
+<div class="key-reveal">
+  <strong>المفتاح الجديد — انسخه الآن، لن يظهر مرة أخرى:</strong>
+  <p class="mono" style="margin:8px 0 0; font-size:15px;">{{ new_key }}</p>
+</div>
+{% endif %}
+
+{% if user.role == 'owner' %}
+<div class="card">
+  <h2>إنشاء مفتاح جديد</h2>
+  <form method="post" action="/dashboard/api-keys/create">
+    <label for="name">اسم المفتاح (مثلاً: n8n production)</label>
+    <input type="text" id="name" name="name" required>
+    <label>النطاقات (Scopes)</label>
+    {% for scope, label, dangerous in scope_choices %}
+    <div class="checkbox-row {{ 'danger' if dangerous else '' }}">
+      <input type="checkbox" id="scope-{{ scope }}" name="scopes" value="{{ scope }}">
+      <label for="scope-{{ scope }}" style="margin:0; display:inline; color:inherit; font-size:14px;">{{ label }} <span class="mono muted">({{ scope }})</span></label>
+    </div>
+    {% endfor %}
+    <div style="margin-top:16px;"><button type="submit">إنشاء المفتاح</button></div>
+  </form>
+</div>
+{% endif %}
+
+<div class="card">
+  <h2>المفاتيح الحالية</h2>
+  {% if keys %}
+  <table>
+    <thead><tr><th>الاسم</th><th>المفتاح</th><th>النطاقات</th><th>آخر استخدام</th><th>الحالة</th><th></th></tr></thead>
+    <tbody>
+      {% for k in keys %}
+      <tr>
+        <td>{{ k.name }}</td>
+        <td class="mono">{{ k.key_prefix }}</td>
+        <td class="mono muted">{{ k.scopes|join(', ') }}</td>
+        <td class="mono muted">{{ k.last_used_at.strftime('%Y-%m-%d %H:%M') if k.last_used_at else '—' }}</td>
+        <td>
+          {% if k.revoked_at %}<span class="pill bad">ملغى</span>
+          {% else %}<span class="pill good">فعّال</span>{% endif %}
+        </td>
+        <td>
+          {% if not k.revoked_at and user.role == 'owner' %}
+          <form method="post" action="/dashboard/api-keys/{{ k.id }}/revoke" style="margin:0;">
+            <button type="submit" class="secondary">إلغاء</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted">لا يوجد مفاتيح بعد.</p>
+  {% endif %}
+</div>
+{% endblock %}

@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}Awab AI Office{% endblock %}</title>
+<style>
+  :root {
+    --ink: #171b22;
+    --paper: #f4f5f2;
+    --panel: #ffffff;
+    --line: #dfe2db;
+    --accent: #2e5266;
+    --accent-soft: #e4ecef;
+    --good: #2f7a5c;
+    --good-soft: #dcebe3;
+    --bad: #a43229;
+    --bad-soft: #f3dbd7;
+    --warn: #9c6b0b;
+    --warn-soft: #f1e6cc;
+    --muted: #5b6472;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans Arabic", Tahoma, sans-serif;
+    background: var(--paper);
+    color: var(--ink);
+    line-height: 1.6;
+  }
+  nav {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    padding: 14px 24px;
+    background: var(--panel);
+    border-bottom: 1px solid var(--line);
+  }
+  nav .brand { font-weight: 800; margin-left: auto; color: var(--accent); }
+  nav a { color: var(--muted); text-decoration: none; font-size: 14.5px; }
+  nav a:hover, nav a.active { color: var(--ink); font-weight: 600; }
+  nav form { margin: 0; }
+  nav button.link {
+    background: none; border: none; color: var(--muted); font-size: 14.5px;
+    cursor: pointer; font-family: inherit; padding: 0;
+  }
+  main { max-width: 960px; margin: 0 auto; padding: 28px 24px 64px; }
+  h1 { font-size: 22px; margin: 0 0 20px; }
+  h2 { font-size: 16px; margin: 0 0 12px; }
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 18px 20px;
+    margin-bottom: 18px;
+  }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th, td { text-align: right; padding: 8px 10px; border-bottom: 1px solid var(--line); }
+  th { color: var(--muted); font-weight: 600; font-size: 12.5px; text-transform: uppercase; }
+  .pill {
+    display: inline-block; font-size: 12px; font-weight: 700;
+    padding: 2px 9px; border-radius: 999px;
+  }
+  .pill.good { background: var(--good-soft); color: var(--good); }
+  .pill.bad { background: var(--bad-soft); color: var(--bad); }
+  .pill.warn { background: var(--warn-soft); color: var(--warn); }
+  .pill.muted { background: #eee; color: var(--muted); }
+  label { display: block; font-size: 13.5px; margin: 10px 0 4px; color: var(--muted); }
+  input[type=text], input[type=email], input[type=password] {
+    width: 100%; padding: 9px 11px; border: 1px solid var(--line); border-radius: 6px; font-size: 14px;
+  }
+  .checkbox-row { display: flex; align-items: center; gap: 8px; margin: 6px 0; font-size: 14px; }
+  .checkbox-row.danger { color: var(--bad); }
+  button, .btn {
+    background: var(--accent); color: white; border: none; border-radius: 6px;
+    padding: 9px 16px; font-size: 14px; cursor: pointer; font-family: inherit;
+  }
+  button.secondary { background: var(--panel); color: var(--bad); border: 1px solid var(--bad); }
+  .error { color: var(--bad); font-size: 14px; margin: 8px 0; }
+  .muted { color: var(--muted); font-size: 13px; }
+  .mono { font-family: ui-monospace, "SF Mono", Consolas, monospace; direction: ltr; unicode-bidi: isolate; }
+  .key-reveal {
+    background: var(--good-soft); border: 1px solid var(--good); border-radius: 8px;
+    padding: 14px 16px; margin-bottom: 16px; word-break: break-all;
+  }
+</style>
+</head>
+<body>
+<nav>
+  <a href="/dashboard" {% if active == 'overview' %}class="active"{% endif %}>نظرة عامة</a>
+  <a href="/dashboard/api-keys" {% if active == 'api-keys' %}class="active"{% endif %}>مفاتيح API</a>
+  <a href="/dashboard/skills" {% if active == 'skills' %}class="active"{% endif %}>جاهزية المهارات</a>
+  {% if user %}
+  <form action="/dashboard/logout" method="post"><button type="submit" class="link">تسجيل خروج</button></form>
+  {% endif %}
+  <span class="brand">Awab AI Office</span>
+</nav>
+<main>
+{% block content %}{% endblock %}
+</main>
+</body>
+</html>

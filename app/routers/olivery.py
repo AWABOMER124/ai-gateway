@@ -5,13 +5,13 @@ from app.schemas.olivery import (
 )
 from app.agents import olivery_agent
 from app.services import audit_log, olivery_edit_store, olivery_report_store
-from app.routers._auth import require_api_key
+from app.routers._auth import require_scope
 
 router = APIRouter(prefix="/olivery", tags=["Olivery"])
 
 
 @router.post("/report", response_model=OliveryReportResponse)
-async def olivery_report(req: OliveryReportRequest, _=Depends(require_api_key)):
+async def olivery_report(req: OliveryReportRequest, _=Depends(require_scope("olivery:read"))):
     result = await olivery_agent.report(
         report_type=req.report_type,
         filters=req.filters,
@@ -31,7 +31,7 @@ async def olivery_report(req: OliveryReportRequest, _=Depends(require_api_key)):
 
 
 @router.post("/edit-order", response_model=OliveryEditOrderResponse)
-async def olivery_edit_order(req: OliveryEditOrderRequest, _=Depends(require_api_key)):
+async def olivery_edit_order(req: OliveryEditOrderRequest, _=Depends(require_scope("olivery:write"))):
     staged = await olivery_agent.stage_edit(order_id=req.order_id, vals=req.vals)
     request_id = await olivery_edit_store.save_edit_request(
         task_id=req.task_id, order_id=req.order_id, vals=req.vals, preview=staged["preview"],

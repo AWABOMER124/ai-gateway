@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}نظرة عامة — Awab AI Office{% endblock %}
+{% block content %}
+<h1>نظرة عامة</h1>
+
+<div class="card">
+  <h2>حالة التكاملات</h2>
+  <div class="grid">
+    {% for name, ok in integrations.items() %}
+    <div>
+      <span class="pill {{ 'good' if ok else 'bad' }}">{{ 'مضبوط' if ok else 'غير مضبوط' }}</span>
+      {{ name }}
+    </div>
+    {% endfor %}
+  </div>
+</div>
+
+<div class="card">
+  <h2>إنفاق OpenAI اليوم</h2>
+  <p style="font-size:22px; font-weight:700; margin:0;">${{ "%.4f"|format(spend_today) }}</p>
+  <p class="muted">السقف اليومي يُضبط عبر <code class="mono">OPENAI_DAILY_SPEND_LIMIT_USD</code>.</p>
+</div>
+
+<div class="card">
+  <h2>آخر الإجراءات (Audit Log)</h2>
+  {% if recent_audit %}
+  <table>
+    <thead><tr><th>الوقت</th><th>الإجراء</th><th>الحالة</th></tr></thead>
+    <tbody>
+      {% for row in recent_audit %}
+      <tr>
+        <td class="mono muted">{{ row.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+        <td>{{ row.action }}</td>
+        <td><span class="pill {{ 'good' if row.status in ('ok','executed','sent') else ('warn' if 'fail' not in (row.status or '') else 'bad') }}">{{ row.status }}</span></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted">لا يوجد إجراءات مسجّلة بعد.</p>
+  {% endif %}
+</div>
+{% endblock %}

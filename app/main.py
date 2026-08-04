@@ -10,6 +10,7 @@ from fastapi.responses import JSONResponse
 from app.routers import health, ask, search
 from app.routers import agent as agent_r, email as email_r, olivery as olivery_r, files as files_r, approvals as approvals_r
 from app.routers import waslak as waslak_r
+from app.routers import dashboard as dashboard_r
 from app.services.openai_usage import SpendLimitExceeded
 
 
@@ -52,3 +53,4 @@ app.include_router(olivery_r.router, tags=['Olivery'])
 app.include_router(files_r.router, tags=['Files'])
 app.include_router(approvals_r.router, tags=['Approvals'])
 app.include_router(waslak_r.router, tags=['Waslak'])
+app.include_router(dashboard_r.router, tags=['Dashboard'], include_in_schema=False)

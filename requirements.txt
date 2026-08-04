@@ -6,3 +6,5 @@ python-dotenv
 pydantic
 httpx
 aiosmtplib
+jinja2
+python-multipart

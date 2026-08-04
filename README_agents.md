@@ -41,10 +41,16 @@ POST /approvals/decide    ← تنفيذ أو رفض
 ## الـ Endpoints
 
 ### Security
-جميع الـ endpoints (ما عدا `/health`) تحتاج:
+جميع الـ endpoints (ما عدا `/health`) تحتاج مفتاح API — إما المفتاح المشترك القديم:
 ```
 X-API-Key: <GATEWAY_API_KEY>
 ```
+أو (من 2026-08-04) مفتاح نطاقي (scoped) صادر من `/dashboard/api-keys`:
+```
+Authorization: Bearer <scoped-key>
+```
+كل مفتاح نطاقي محدود بنطاق واحد أو أكثر (`email:write`, `waslak:read`, ...) —
+راجع قسم "لوحة الفريق" أسفل الصفحة لجدول النطاقات الكامل والتفاصيل.
 
 ---
 
@@ -488,3 +494,62 @@ GROUP BY 1,2,3 ORDER BY 1 DESC, cost_usd DESC;
 Python ناقصة، migration غير مُطبَّقة، وخلل استيراد كانوا يظهروا فقط لما نجرب
 endpoint يدوياً بالصدفة — هذا السكريبت يكشفهم تلقائياً بعد كل `docker compose
 up -d --build` بدل الاعتماد على التجربة اليدوية.
+
+## لوحة الفريق (Dashboard) — مفاتيح API نطاقية + جاهزية المهارات
+
+`/dashboard` — واجهة ويب بسيطة (Jinja2، بلا build step) لفريق صغير:
+
+- **تسجيل دخول**: لا يوجد تسجيل ذاتي — أول مالك (owner) يُنشأ عبر:
+  ```bash
+  docker exec -it awab-ai-gateway python scripts/create_dashboard_user.py
+  ```
+  بعدها الـ owner يضيف باقي الفريق بنفس السكريبت.
+
+- **جدول النطاقات (Scopes)**:
+
+  | Endpoint | Scope |
+  |---|---|
+  | `POST /agent/plan`, `/agent/review` | `agent:write` |
+  | `POST /email/draft` | `email:write` |
+  | `POST /olivery/report` | `olivery:read` |
+  | `POST /olivery/edit-order` | `olivery:write` |
+  | `POST /files/analyze-text` | `files:write` |
+  | `POST /waslak/store-draft` | `waslak:draft` |
+  | `GET /waslak/store-draft/{id}`, `GET /waslak/merchants` | `waslak:read` |
+  | `GET /waslak/merchants/{id}/insights` | `waslak:insights` |
+  | `GET /approvals/pending`, `GET /approvals/{id}` | `approvals:read` |
+  | `POST /approvals/decide` | `approvals:decide` ⚠️ (راجع التحذير أسفل)
+
+- **مفاتيح API نطاقية** (`/dashboard/api-keys`, owner فقط): بديل/مكمّل
+  لـ `GATEWAY_API_KEY` المشترك — كل مفتاح جديد ياخذ نطاقات محددة (مثل
+  `waslak:read` بس، أو `email:write` بس) بدل صلاحية كاملة على كل النظام.
+  المفتاح الخام يظهر مرة وحدة وقت الإنشاء، وبعدها يُخزَّن hash فقط
+  (نفس نمط `email_drafts`/`audit_log` — لا قيم حساسة خام بالداتابيس).
+  استخدامه: `Authorization: Bearer <key>` أو `X-API-Key: <key>` — نفس
+  الـ headers المدعومة أصلاً. `GATEWAY_API_KEY` القديم يستمر يشتغل بصلاحية
+  كاملة (`*`) لأي caller داخلي (Telegram/n8n) — ما تغيّر شيء لهم.
+
+  > ⚠️ **نطاق `approvals:decide` خطير عمداً** — منحه لمفتاح خارجي يعني هذا
+  > التكامل يقدر يوافق تلقائياً على إجراء حقيقي (إرسال إيميل، تعديل طلب،
+  > إرسال مسودة لواصلك) بدون تدخل بشري، عكس مبدأ "موافقة صريحة" المطبّق بكل
+  > مكان تاني بهذا النظام. اللوحة تسمح فيه (بقرار owner صريح) مع تحذير واضح
+  > بنموذج الإنشاء — مش افتراضي أبداً.
+
+- **جاهزية المهارات** (`/dashboard/skills`): لكل مهارة (design / ecommerce /
+  learning) طبقتين — **health** (فحص فوري بلا تكلفة: مفاتيح env موجودة؟
+  الوحدات قابلة للاستيراد؟) و**capability** (تشغيل حقيقي عبر GPT مع تقييم
+  LLM-judge على مقياس 1-10، يُسجَّل بجدول `skill_test_runs`). `design`
+  و`ecommerce` يعيدوا استخدام `waslak_agent.generate_store_draft` (أقرب
+  قدرة "تصميم/تجارة إلكترونية" حقيقية بالنظام)، و`learning` يختبر RAG
+  الحقيقي (`app/rag/search.py` + `answer.py`) بأسئلة ثابتة من قاعدة
+  المعرفة الفعلية. كل نداء GPT هون يمر عبر نفس سقف الإنفاق اليومي
+  (`OPENAI_DAILY_SPEND_LIMIT_USD`).
+
+متغيرات بيئة إضافية مطلوبة: `DASHBOARD_SESSION_SECRET` (سر توقيع جلسة
+الدخول — توليده: `python3 -c "import secrets; print(secrets.token_hex(32))"`)
+و`DASHBOARD_COOKIE_SECURE` (اتركها `true` بالإنتاج).
+
+خارج النطاق عمداً (مش نسيان): لا واجهة دعوة أعضاء داخل التطبيق (سكريبت CLI
+بدلاً منها)، لا جدول جلسات على السيرفر (يمكن إبطال كل الجلسات فوراً بتدوير
+`DASHBOARD_SESSION_SECRET`)، لا CSRF token (مخفف بـ `SameSite=Lax`)، لا
+تشغيل مجدول تلقائي لاختبارات القدرة (يدوي "تشغيل الآن" بس بالنسخة الحالية).
