@@ -20,6 +20,7 @@ from app.core.errors import AICoreError
 from app.api.v1.router import router as v1_router
 from app.api.v1.qiad_router import router as v1_qiad_router
 from app.api.v1.wasla_router import router as v1_wasla_router
+from app.api.v1.admin_router import router as v1_admin_router
 
 
 logging.basicConfig(
@@ -67,6 +68,7 @@ app.include_router(dashboard_r.router, tags=['Dashboard'], include_in_schema=Fal
 app.include_router(v1_router, tags=['v1'])
 app.include_router(v1_qiad_router, tags=['v1-qiad'])
 app.include_router(v1_wasla_router, tags=['v1-wasla'])
+app.include_router(v1_admin_router, tags=['v1-admin'])
 
 
 # ── AICoreError handler (multi-tenant error format) ──
