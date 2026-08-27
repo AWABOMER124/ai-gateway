@@ -18,6 +18,7 @@ from app.routers import dashboard as dashboard_r
 from app.services.openai_usage import SpendLimitExceeded
 from app.core.errors import AICoreError
 from app.api.v1.router import router as v1_router
+from app.api.v1.qiad_router import router as v1_qiad_router
 
 
 logging.basicConfig(
@@ -63,6 +64,7 @@ app.include_router(dashboard_r.router, tags=['Dashboard'], include_in_schema=Fal
 
 # ── v1 Multi-tenant API ──
 app.include_router(v1_router, tags=['v1'])
+app.include_router(v1_qiad_router, tags=['v1-qiad'])
 
 
 # ── AICoreError handler (multi-tenant error format) ──
