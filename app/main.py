@@ -1,5 +1,9 @@
 """
 main.py — FastAPI application entry point.
+
+Unified Multi-Tenant AI Core platform.
+Legacy endpoints (/agent/*, /waslak/*, /email/*, etc.) are preserved.
+New multi-tenant endpoints live under /api/v1/.
 """
 
 import logging
@@ -12,6 +16,8 @@ from app.routers import agent as agent_r, email as email_r, olivery as olivery_r
 from app.routers import waslak as waslak_r
 from app.routers import dashboard as dashboard_r
 from app.services.openai_usage import SpendLimitExceeded
+from app.core.errors import AICoreError
+from app.api.v1.router import router as v1_router
 
 
 logging.basicConfig(
@@ -21,9 +27,9 @@ logging.basicConfig(
 )
 
 app = FastAPI(
-    title='Awab AI Operator — API Gateway',
-    description='API يستقبل أسئلة ويرجع إجابات بأسلوب أواب من قاعدة المعرفة.',
-    version='0.1.0',
+    title='AI Core — Unified Intelligence Platform',
+    description='Multi-tenant AI platform powering QIAD, Wasla, and legacy services.',
+    version='1.0.0',
 )
 
 app.add_middleware(
@@ -54,3 +60,26 @@ app.include_router(files_r.router, tags=['Files'])
 app.include_router(approvals_r.router, tags=['Approvals'])
 app.include_router(waslak_r.router, tags=['Waslak'])
 app.include_router(dashboard_r.router, tags=['Dashboard'], include_in_schema=False)
+
+# ── v1 Multi-tenant API ──
+app.include_router(v1_router, tags=['v1'])
+
+
+# ── AICoreError handler (multi-tenant error format) ──
+@app.exception_handler(AICoreError)
+async def ai_core_error_handler(request: Request, exc: AICoreError):
+    return JSONResponse(status_code=exc.http_status, content=exc.to_response())
+
+
+# ── Startup: bootstrap legacy tenant ──
+@app.on_event("startup")
+async def _bootstrap():
+    """Ensure the legacy tenant exists so existing endpoints keep working."""
+    try:
+        from app.core.tenancy import bootstrap_legacy_tenant_sync
+        import asyncio
+        await asyncio.to_thread(bootstrap_legacy_tenant_sync)
+        logging.getLogger(__name__).info("Legacy tenant bootstrapped")
+    except Exception as e:
+        # Don't crash the app if migration hasn't run yet
+        logging.getLogger(__name__).warning("Legacy tenant bootstrap skipped: %s", e)
