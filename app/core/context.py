@@ -26,6 +26,7 @@ class Product(str, Enum):
     WASLA = "wasla"
     LEGACY_PERSONAL = "legacy_personal"
     EASY_DELIVERY = "easy_delivery"
+    ZAWED = "zawed"
 
 
 class AgentMode(str, Enum):

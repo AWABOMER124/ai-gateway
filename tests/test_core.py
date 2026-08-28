@@ -229,6 +229,51 @@ class TestSecurity:
         assert ctx.actor.id == "user_1"
         assert "contacts.view" in ctx.actor.permissions
 
+    def test_zawed_jwt_roundtrip(self, monkeypatch):
+        monkeypatch.setenv("AI_CORE_SECRET_ZAWED", "zawed-test-key")
+
+        token = create_service_token(
+            issuer="zawed",
+            subject="merchant_1",
+            organization_id="zawed_org_1",
+            permissions=["currency.convert", "phone.validate"],
+        )
+        claims = verify_service_token(token)
+        ctx = build_context_from_token(claims)
+
+        assert ctx.product == Product.ZAWED
+        assert ctx.tenant_id == "zawed_org_1"
+        assert ctx.actor.id == "merchant_1"
+        assert "currency.convert" in ctx.actor.permissions
+
+    def test_unknown_issuer_rejected(self, monkeypatch):
+        monkeypatch.setenv("AI_CORE_SERVICE_SECRET", "master-key")
+
+        token = create_service_token(
+            issuer="unknown_product",
+            subject="user_x",
+            organization_id="org_x",
+            permissions=[],
+        )
+        claims = verify_service_token(token)
+        with pytest.raises(AuthError, match="Unknown JWT issuer"):
+            build_context_from_token(claims)
+
+    def test_easy_delivery_jwt(self, monkeypatch):
+        monkeypatch.setenv("AI_CORE_SECRET_EASY_DELIVERY", "ed-test-key")
+
+        token = create_service_token(
+            issuer="easy_delivery",
+            subject="driver_1",
+            organization_id="ed_org_1",
+            permissions=["shipping.track"],
+        )
+        claims = verify_service_token(token)
+        ctx = build_context_from_token(claims)
+
+        assert ctx.product == Product.EASY_DELIVERY
+        assert ctx.tenant_id == "ed_org_1"
+
 
 # ── Tool Registry ─────────────────────────────────────────────────
 

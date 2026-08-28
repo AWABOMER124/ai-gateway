@@ -146,8 +146,12 @@ def build_context_from_token(claims: dict) -> ExecutionContext:
         "qiad": Product.QIAD,
         "wasla": Product.WASLA,
         "easy_delivery": Product.EASY_DELIVERY,
+        "zawed": Product.ZAWED,
+        "legacy_personal": Product.LEGACY_PERSONAL,
     }
-    product = product_map.get(issuer, Product.LEGACY_PERSONAL)
+    product = product_map.get(issuer)
+    if product is None:
+        raise AuthError(f"Unknown JWT issuer: {issuer}")
 
     return ExecutionContext(
         tenant_id=claims["org"],
