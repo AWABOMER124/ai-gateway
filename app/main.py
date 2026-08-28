@@ -24,6 +24,9 @@ from app.api.v1.admin_router import router as v1_admin_router
 
 import app.tools.core.weather  # noqa: F401 — register weather tools
 import app.tools.core.currency  # noqa: F401 — register currency tool
+import app.tools.core.geo  # noqa: F401 — register geo tools
+import app.tools.core.phone  # noqa: F401 — register phone tool
+import app.tools.core.email_tool  # noqa: F401 — register email tool
 import app.providers.adapters  # noqa: F401 — register provider adapters
 
 

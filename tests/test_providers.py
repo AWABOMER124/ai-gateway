@@ -13,6 +13,9 @@ from app.providers.router import route, NoProviderAvailable
 
 import app.tools.core.weather  # noqa: F401
 import app.tools.core.currency  # noqa: F401
+import app.tools.core.geo  # noqa: F401
+import app.tools.core.phone  # noqa: F401
+import app.tools.core.email_tool  # noqa: F401
 import app.providers.adapters  # noqa: F401
 
 
@@ -205,9 +208,27 @@ class TestCoreToolRegistration:
         from app.tools.registry import tool_registry
         assert tool_registry.is_registered("currency.convert")
 
+    def test_geo_tools_registered(self):
+        from app.tools.registry import tool_registry
+        assert tool_registry.is_registered("geo.geocode")
+        assert tool_registry.is_registered("geo.reverse_geocode")
+
+    def test_phone_tool_registered(self):
+        from app.tools.registry import tool_registry
+        assert tool_registry.is_registered("phone.validate")
+
+    def test_email_tool_registered(self):
+        from app.tools.registry import tool_registry
+        assert tool_registry.is_registered("email.validate")
+
     def test_tools_available_for_all_products(self):
         from app.tools.registry import tool_registry
-        for key in ("weather.current", "weather.forecast", "currency.convert"):
+        all_keys = (
+            "weather.current", "weather.forecast", "currency.convert",
+            "geo.geocode", "geo.reverse_geocode", "phone.validate", "email.validate",
+        )
+        for key in all_keys:
             tool = tool_registry.get(key)
+            assert tool is not None, f"{key} not registered"
             for prod in (Product.QIAD, Product.WASLA, Product.EASY_DELIVERY, Product.ZAWED):
                 assert tool.is_available_for(prod), f"{key} should be available for {prod}"

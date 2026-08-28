@@ -216,6 +216,99 @@ async def generate_token(body: GenerateTokenRequest, authorization: str = Header
         return JSONResponse(status_code=400, content={"error": str(e)})
 
 
+# ── Provider Management ─────────────────────────────────────────────
+
+
+@router.get("/providers")
+async def list_providers(authorization: str = Header("")):
+    _check_admin_auth(authorization)
+    from app.providers.registry import provider_registry
+    from app.providers.health import circuit_breaker
+
+    result = []
+    for p in provider_registry.list_all():
+        m = p.meta()
+        h = circuit_breaker.get_health(m.key).to_dict()
+        result.append({
+            "key": m.key,
+            "display_name": m.display_name,
+            "capabilities": m.capabilities,
+            "enabled": m.enabled,
+            "priority": m.priority,
+            "auth_type": m.auth_type.value if hasattr(m.auth_type, 'value') else m.auth_type,
+            "timeout_seconds": m.timeout_seconds,
+            "cost_per_call": m.estimated_cost_per_call,
+            "health": h,
+        })
+    return {"providers": result}
+
+
+@router.post("/providers/{key}/toggle")
+async def toggle_provider(key: str, authorization: str = Header("")):
+    _check_admin_auth(authorization)
+    from app.providers.registry import provider_registry
+
+    p = provider_registry.get(key)
+    if not p:
+        return JSONResponse(status_code=404, content={"error": f"Provider not found: {key}"})
+
+    m = p.meta()
+    if m.enabled:
+        provider_registry.disable(key)
+        return {"key": key, "enabled": False, "message": f"تم تعطيل {m.display_name}"}
+    else:
+        provider_registry.enable(key)
+        return {"key": key, "enabled": True, "message": f"تم تفعيل {m.display_name}"}
+
+
+@router.post("/providers/{key}/reset-circuit")
+async def reset_provider_circuit(key: str, authorization: str = Header("")):
+    _check_admin_auth(authorization)
+    from app.providers.health import circuit_breaker
+
+    circuit_breaker.reset(key)
+    return {"key": key, "message": "تم إعادة ضبط الـ circuit breaker"}
+
+
+@router.get("/providers/{key}/health")
+async def provider_health_check(key: str, authorization: str = Header("")):
+    _check_admin_auth(authorization)
+    from app.providers.registry import provider_registry
+
+    p = provider_registry.get(key)
+    if not p:
+        return JSONResponse(status_code=404, content={"error": f"Provider not found: {key}"})
+
+    try:
+        healthy = await p.health_check()
+        return {"key": key, "healthy": healthy, "display_name": p.display_name}
+    except Exception as e:
+        return {"key": key, "healthy": False, "error": str(e)[:200]}
+
+
+# ── Registered Tools List ──────────────────────────────────────────
+
+
+@router.get("/tools")
+async def list_registered_tools(authorization: str = Header("")):
+    _check_admin_auth(authorization)
+    from app.tools.registry import tool_registry
+
+    tools = tool_registry.list_tools(enabled_only=False)
+    return {"tools": [
+        {
+            "key": t.key,
+            "product": t.product,
+            "description": t.description,
+            "risk_level": t.risk_level.value,
+            "enabled": t.enabled,
+            "timeout_seconds": t.timeout_seconds,
+            "allowed_products": t.allowed_products,
+        }
+        for t in tools
+    ]}
+
+
 # ── Migration Status ────────────────────────────────────────────────
 
 
@@ -231,6 +324,10 @@ async def migration_status(authorization: str = Header("")):
         ("wasla_store_versions", "012_wasla_store_projects.sql"),
         ("wasla_store_patches", "012_wasla_store_projects.sql"),
         ("wasla_tenant_config", "012_wasla_store_projects.sql"),
+        ("ai_providers", "013_universal_tool_providers.sql"),
+        ("ai_provider_capabilities", "013_universal_tool_providers.sql"),
+        ("ai_tenant_provider_preferences", "013_universal_tool_providers.sql"),
+        ("ai_provider_executions", "013_universal_tool_providers.sql"),
     ]
 
     def _check():
@@ -374,6 +471,8 @@ h1{font-size:1.5rem;font-weight:700;margin-bottom:.25rem}
     <button class="tab" onclick="showTab('tenants',this)">المستأجرين</button>
     <button class="tab" onclick="showTab('tokens',this)">توليد توكن</button>
     <button class="tab" onclick="showTab('migrations',this)">Migrations</button>
+    <button class="tab" onclick="showTab('providers',this)">Providers</button>
+    <button class="tab" onclick="showTab('tools',this)">الأدوات</button>
   </div>
 
   <div id="panel-health" class="panel active">
@@ -425,7 +524,7 @@ h1{font-size:1.5rem;font-weight:700;margin-bottom:.25rem}
       <p style="font-size:.82rem;color:var(--ink2);margin-bottom:.75rem">توكن لمنصة وصلة أو قياد — استخدمه في Authorization header</p>
       <div class="form-row">
         <div class="form-group"><label>المنتج (issuer)</label>
-          <select id="tk-issuer"><option value="wasla">وصلة (wasla)</option><option value="qiad">قياد (qiad)</option></select>
+          <select id="tk-issuer"><option value="wasla">وصلة (wasla)</option><option value="qiad">قياد (qiad)</option><option value="easy_delivery">Easy Delivery</option><option value="zawed">زاود (zawed)</option></select>
         </div>
         <div class="form-group"><label>معرف المستخدم</label><input id="tk-sub" value="test-user" dir="ltr"></div>
       </div>
@@ -436,6 +535,26 @@ h1{font-size:1.5rem;font-weight:700;margin-bottom:.25rem}
       <div class="form-group"><label>الصلاحيات (مفصولة بفاصلة)</label><input id="tk-perms" value="store.generate,store.submit,store.view,merchants.view" dir="ltr"></div>
       <button class="btn" onclick="generateToken()">توليد التوكن</button>
       <div id="token-result"></div>
+    </div>
+  </div>
+
+  <div id="panel-providers" class="panel">
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem">
+        <h2>مزودي الخدمات</h2>
+        <button class="btn btn-outline" onclick="loadProviders()">تحديث</button>
+      </div>
+      <div id="providers-body"><div class="empty">اضغط تحديث لعرض المزودين</div></div>
+    </div>
+  </div>
+
+  <div id="panel-tools" class="panel">
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem">
+        <h2>الأدوات المسجلة</h2>
+        <button class="btn btn-outline" onclick="loadTools()">تحديث</button>
+      </div>
+      <div id="tools-body"><div class="empty">اضغط تحديث لعرض الأدوات</div></div>
     </div>
   </div>
 
@@ -464,6 +583,8 @@ function showTab(id, btn) {
   document.getElementById('panel-'+id).classList.add('active');
   if (id === 'config') loadConfig();
   if (id === 'tenants') loadTenants();
+  if (id === 'providers') loadProviders();
+  if (id === 'tools') loadTools();
 }
 
 function pill(status) {
@@ -556,6 +677,66 @@ function generateToken() {
     if (d.error) { el.innerHTML = '<div class="result" style="color:var(--err)">'+d.error+'</div>'; return; }
     el.innerHTML = '<div class="result">// التوكن:\\n'+d.token+'\\n\\n// الاستخدام:\\ncurl -H "Authorization: Bearer '+d.token+'" \\\\\\n  http://localhost:8000/api/v1/wasla/projects\\n\\n// الصلاحية: '+d.expires_in+' ثانية</div>';
   }).catch(function(e) { el.innerHTML = '<div class="result" style="color:var(--err)">'+e.message+'</div>'; });
+}
+
+function loadProviders() {
+  var el = document.getElementById('providers-body');
+  el.innerHTML = '<span class="spinner"></span>';
+  fetch(BASE+'/providers', {headers:headers()}).then(function(r){return r.json()}).then(function(d) {
+    if (!d.providers || d.providers.length === 0) { el.innerHTML = '<div class="empty">لا يوجد مزودين مسجلين</div>'; return; }
+    var html = '';
+    for (var i = 0; i < d.providers.length; i++) {
+      var p = d.providers[i];
+      var st = p.enabled ? '<span class="pill pill-ok">مفعل</span>' : '<span class="pill pill-err">معطل</span>';
+      var cs = p.health.state === 'closed' ? '<span class="pill pill-ok">closed</span>' : (p.health.state === 'open' ? '<span class="pill pill-err">open</span>' : '<span class="pill pill-warn">half_open</span>');
+      var caps = p.capabilities.join(', ');
+      var stats = 'نجاح: '+p.health.success_count+' | فشل: '+p.health.failure_count+' | متوسط: '+p.health.avg_latency_ms+'ms';
+      html += '<div class="card" style="margin-bottom:.75rem"><div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:.5rem"><div><strong>'+p.display_name+'</strong> <span style="font-family:var(--mono);font-size:.75rem;color:var(--ink3);direction:ltr">('+p.key+')</span></div><div style="display:flex;gap:.5rem;align-items:center">'+st+' '+cs+'</div></div>';
+      html += '<div style="font-size:.78rem;color:var(--ink2);margin-top:.5rem">القدرات: <span style="font-family:var(--mono);direction:ltr">'+caps+'</span></div>';
+      html += '<div style="font-size:.75rem;color:var(--ink3);margin-top:.25rem">'+stats+' | أولوية: '+p.priority+' | timeout: '+p.timeout_seconds+'s | تكلفة: $'+p.cost_per_call+'</div>';
+      html += '<div style="margin-top:.5rem;display:flex;gap:.5rem"><button class="btn btn-outline" style="font-size:.75rem;padding:.3rem .7rem" onclick="toggleProvider(\''+p.key+'\')">'+(p.enabled?'تعطيل':'تفعيل')+'</button>';
+      html += '<button class="btn btn-outline" style="font-size:.75rem;padding:.3rem .7rem" onclick="resetCircuit(\''+p.key+'\')">إعادة ضبط Circuit</button>';
+      html += '<button class="btn btn-outline" style="font-size:.75rem;padding:.3rem .7rem" onclick="checkProviderHealth(\''+p.key+'\')">فحص الاتصال</button></div></div>';
+    }
+    el.innerHTML = html;
+  }).catch(function(e) { el.innerHTML = '<div class="empty" style="color:var(--err)">'+e.message+'</div>'; });
+}
+
+function toggleProvider(key) {
+  fetch(BASE+'/providers/'+key+'/toggle', {method:'POST', headers:headers()}).then(function(r){return r.json()}).then(function(d) {
+    loadProviders();
+  });
+}
+
+function resetCircuit(key) {
+  fetch(BASE+'/providers/'+key+'/reset-circuit', {method:'POST', headers:headers()}).then(function(r){return r.json()}).then(function() {
+    loadProviders();
+  });
+}
+
+function checkProviderHealth(key) {
+  fetch(BASE+'/providers/'+key+'/health', {headers:headers()}).then(function(r){return r.json()}).then(function(d) {
+    alert(d.display_name+': '+(d.healthy ? 'متصل ✓' : 'غير متصل ✗')+(d.error ? '\\n'+d.error : ''));
+  });
+}
+
+function loadTools() {
+  var el = document.getElementById('tools-body');
+  el.innerHTML = '<span class="spinner"></span>';
+  fetch(BASE+'/tools', {headers:headers()}).then(function(r){return r.json()}).then(function(d) {
+    if (!d.tools || d.tools.length === 0) { el.innerHTML = '<div class="empty">لا يوجد أدوات مسجلة</div>'; return; }
+    var html = '';
+    for (var i = 0; i < d.tools.length; i++) {
+      var t = d.tools[i];
+      var st = t.enabled ? '<span class="pill pill-ok">مفعل</span>' : '<span class="pill pill-err">معطل</span>';
+      var risk = t.risk_level === 'read_only' ? '<span class="pill pill-ok">'+t.risk_level+'</span>' :
+                 (t.risk_level === 'financial' || t.risk_level === 'destructive' ? '<span class="pill pill-err">'+t.risk_level+'</span>' :
+                 '<span class="pill pill-warn">'+t.risk_level+'</span>');
+      var prods = t.allowed_products.length > 0 ? t.allowed_products.join(', ') : t.product;
+      html += '<div class="row"><span class="row-label" style="font-family:var(--mono);direction:ltr;text-align:left;min-width:180px">'+t.key+'</span>'+st+' '+risk+'<span style="font-size:.75rem;color:var(--ink3)">'+prods+' · '+t.timeout_seconds+'s</span></div>';
+    }
+    el.innerHTML = html;
+  }).catch(function(e) { el.innerHTML = '<div class="empty" style="color:var(--err)">'+e.message+'</div>'; });
 }
 
 function loadMigrations() {
