@@ -22,6 +22,10 @@ from app.api.v1.qiad_router import router as v1_qiad_router
 from app.api.v1.wasla_router import router as v1_wasla_router
 from app.api.v1.admin_router import router as v1_admin_router
 
+import app.tools.core.weather  # noqa: F401 — register weather tools
+import app.tools.core.currency  # noqa: F401 — register currency tool
+import app.providers.adapters  # noqa: F401 — register provider adapters
+
 
 logging.basicConfig(
     level=logging.INFO,
@@ -89,3 +93,9 @@ async def _bootstrap():
     except Exception as e:
         # Don't crash the app if migration hasn't run yet
         logging.getLogger(__name__).warning("Legacy tenant bootstrap skipped: %s", e)
+
+
+@app.on_event("shutdown")
+async def _shutdown():
+    from app.providers.http_client import close_http_client
+    await close_http_client()
