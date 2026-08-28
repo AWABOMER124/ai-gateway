@@ -6,6 +6,8 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+# كسر الكاش — غيّر القيمة لإجبار إعادة البناء
+ARG CACHEBUST=2
 # نسخ الكود
 COPY . .
 
