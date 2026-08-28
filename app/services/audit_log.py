@@ -31,6 +31,19 @@ async def log_action(task_id: str | None, action: str, payload: dict, status: st
     await asyncio.to_thread(_log_sync, task_id, action, payload, status)
 
 
+def log(action: str, detail: dict | None = None, actor: str | None = None, channel: str | None = None) -> None:
+    """Fire-and-forget audit entry used by the tool executor."""
+    payload = detail or {}
+    if actor:
+        payload["actor"] = actor
+    if channel:
+        payload["channel"] = channel
+    try:
+        _log_sync(None, action, payload, "recorded")
+    except Exception:
+        pass
+
+
 def _list_recent_sync(limit: int) -> list[dict]:
     with pooled_cursor(commit=False) as cur:
         cur.execute("SELECT * FROM audit_log ORDER BY created_at DESC LIMIT %s", (limit,))
