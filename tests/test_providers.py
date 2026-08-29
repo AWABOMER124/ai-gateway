@@ -183,19 +183,104 @@ class TestModels:
         assert m.auth_type == AuthType.API_KEY
 
 
+from app.providers.registry import provider_registry
+
+
 class TestAdapterRegistration:
     def test_open_meteo_registered(self):
-        from app.providers.registry import provider_registry
         p = provider_registry.get("open_meteo")
         assert p is not None
         assert p.supports("weather.current")
         assert p.supports("weather.forecast")
 
     def test_exchangerate_registered(self):
-        from app.providers.registry import provider_registry
         p = provider_registry.get("exchangerate_api")
         assert p is not None
         assert p.supports("currency.convert")
+
+    def test_nominatim_registered(self):
+        p = provider_registry.get("nominatim")
+        assert p is not None
+        assert p.supports("geo.geocode")
+        assert p.supports("geo.reverse_geocode")
+
+    def test_local_email_registered(self):
+        p = provider_registry.get("local_email")
+        assert p is not None
+        assert p.supports("email.validate")
+
+    def test_local_phone_registered(self):
+        p = provider_registry.get("local_phone")
+        assert p is not None
+        assert p.supports("phone.validate")
+
+    def test_local_phone_validate(self):
+        p = provider_registry.get("local_phone")
+        result = asyncio.run(p.execute("phone.validate", {
+            "phone_number": "+966501234567", "country_code": "SA",
+        }))
+        assert result.status == ProviderStatus.SUCCESS
+        assert result.data["valid"] is True
+
+    def test_local_phone_invalid(self):
+        p = provider_registry.get("local_phone")
+        result = asyncio.run(p.execute("phone.validate", {
+            "phone_number": "12", "country_code": "",
+        }))
+        assert result.status == ProviderStatus.SUCCESS
+        assert result.data["valid"] is False
+
+    def test_local_email_valid_format(self):
+        p = provider_registry.get("local_email")
+        result = asyncio.run(p.execute("email.validate", {
+            "email": "test@google.com",
+        }))
+        assert result.status == ProviderStatus.SUCCESS
+        assert result.data["domain"] == "google.com"
+
+    def test_local_email_invalid_format(self):
+        p = provider_registry.get("local_email")
+        result = asyncio.run(p.execute("email.validate", {
+            "email": "not-an-email",
+        }))
+        assert result.status == ProviderStatus.SUCCESS
+        assert result.data["valid"] is False
+
+
+class TestProviderCache:
+    def test_cache_miss(self):
+        from app.providers.cache import ProviderCache
+        cache = ProviderCache()
+        assert cache.get("test.cap", {"key": "val"}) is None
+
+    def test_cache_hit(self):
+        from app.providers.cache import ProviderCache
+        cache = ProviderCache()
+        result = ProviderResult(provider="p", capability="c", status=ProviderStatus.SUCCESS, data={"x": 1})
+        cache.put("c", {"a": 1}, result, ttl=60)
+        hit = cache.get("c", {"a": 1})
+        assert hit is not None
+        assert hit.data == {"x": 1}
+        assert hit.cached is True
+
+    def test_cache_clear(self):
+        from app.providers.cache import ProviderCache
+        cache = ProviderCache()
+        result = ProviderResult(provider="p", capability="c", status=ProviderStatus.SUCCESS)
+        cache.put("c", {"a": 1}, result)
+        cache.put("c", {"a": 2}, result)
+        cleared = cache.clear()
+        assert cleared == 2
+        assert cache.get("c", {"a": 1}) is None
+
+    def test_cache_stats(self):
+        from app.providers.cache import ProviderCache
+        cache = ProviderCache()
+        result = ProviderResult(provider="p", capability="c", status=ProviderStatus.SUCCESS)
+        cache.put("c", {"a": 1}, result, ttl=60)
+        stats = cache.stats()
+        assert stats["total_entries"] == 1
+        assert stats["active"] == 1
 
 
 class TestCoreToolRegistration:

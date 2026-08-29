@@ -286,6 +286,24 @@ async def provider_health_check(key: str, authorization: str = Header("")):
         return {"key": key, "healthy": False, "error": str(e)[:200]}
 
 
+# ── Cache Management ───────────────────────────────────────────────
+
+
+@router.get("/cache/stats")
+async def cache_stats(authorization: str = Header("")):
+    _check_admin_auth(authorization)
+    from app.providers.cache import provider_cache
+    return provider_cache.stats()
+
+
+@router.post("/cache/clear")
+async def clear_cache(authorization: str = Header("")):
+    _check_admin_auth(authorization)
+    from app.providers.cache import provider_cache
+    cleared = provider_cache.clear()
+    return {"cleared": cleared, "message": f"تم مسح {cleared} عنصر من الكاش"}
+
+
 # ── Registered Tools List ──────────────────────────────────────────
 
 

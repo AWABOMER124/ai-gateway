@@ -16,6 +16,7 @@ from typing import Any, Optional
 from app.core.context import ExecutionContext
 from app.providers.health import circuit_breaker
 from app.providers.models import ProviderResult, ProviderError, ProviderStatus
+from app.providers.cache import provider_cache
 from app.providers.registry import provider_registry
 
 logger = logging.getLogger(__name__)
@@ -39,6 +40,11 @@ async def route(
     Route a capability request to the best available provider.
     Falls back through providers on retryable failures.
     """
+    cached = provider_cache.get(capability, params)
+    if cached is not None:
+        logger.debug("Cache hit for %s", capability)
+        return cached
+
     providers = provider_registry.find_by_capability(capability)
     if not providers:
         raise NoProviderAvailable(capability, [])
@@ -73,6 +79,7 @@ async def route(
 
             if result.status == ProviderStatus.SUCCESS:
                 circuit_breaker.record_success(pk, elapsed_ms)
+                provider_cache.put(capability, params, result)
                 logger.info(
                     "Provider %s succeeded for %s in %dms",
                     pk, capability, int(elapsed_ms),
