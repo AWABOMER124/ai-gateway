@@ -81,10 +81,8 @@ class TestQiadToolRegistration:
 
 
 class TestQiadMockAdapter:
-    @pytest.fixture
-    def adapter(self):
+    def _make_adapter(self):
         adapter = QiadMockAdapter()
-        # Seed test data for tenant_1
         adapter.seed_contact("tenant_1", QiadContact(
             id="c1", name="أحمد محمد", phone="+966501234567", email="ahmed@example.com",
             tags=["vip"],
@@ -92,16 +90,13 @@ class TestQiadMockAdapter:
         adapter.seed_contact("tenant_1", QiadContact(
             id="c2", name="سارة العلي", phone="+966509876543",
         ))
-        # Seed for different tenant
         adapter.seed_contact("tenant_2", QiadContact(
             id="c3", name="خالد السعيد", phone="+966507777777",
         ))
-
         adapter.seed_conversation("tenant_1", QiadConversation(
             id="conv1", contact_id="c1", channel="whatsapp", status="open",
             messages=[{"content": "وين طلبي؟", "direction": "inbound"}],
         ))
-
         adapter.seed_order("tenant_1", QiadOrder(
             id="ord1", contact_id="c1", platform="salla",
             platform_order_id="SAL-12345", status="shipped",
@@ -110,95 +105,96 @@ class TestQiadMockAdapter:
         ))
         return adapter
 
-    @pytest.mark.asyncio
-    async def test_get_contact(self, adapter):
+    def test_get_contact(self):
+        import asyncio
+        adapter = self._make_adapter()
         ctx = _make_ctx(tenant_id="tenant_1")
-        contact = await adapter.get_contact(ctx, "c1")
+        contact = asyncio.run(adapter.get_contact(ctx, "c1"))
         assert contact is not None
         assert contact.name == "أحمد محمد"
         assert contact.phone == "+966501234567"
 
-    @pytest.mark.asyncio
-    async def test_tenant_isolation(self, adapter):
-        """Tenant 1 cannot see tenant 2's contacts."""
+    def test_tenant_isolation(self):
+        import asyncio
+        adapter = self._make_adapter()
         ctx1 = _make_ctx(tenant_id="tenant_1")
         ctx2 = _make_ctx(tenant_id="tenant_2")
+        assert asyncio.run(adapter.get_contact(ctx1, "c1")) is not None
+        assert asyncio.run(adapter.get_contact(ctx1, "c3")) is None
+        assert asyncio.run(adapter.get_contact(ctx2, "c3")) is not None
+        assert asyncio.run(adapter.get_contact(ctx2, "c1")) is None
 
-        # tenant_1 can see c1 but not c3
-        assert await adapter.get_contact(ctx1, "c1") is not None
-        assert await adapter.get_contact(ctx1, "c3") is None
-
-        # tenant_2 can see c3 but not c1
-        assert await adapter.get_contact(ctx2, "c3") is not None
-        assert await adapter.get_contact(ctx2, "c1") is None
-
-    @pytest.mark.asyncio
-    async def test_search_contacts(self, adapter):
+    def test_search_contacts(self):
+        import asyncio
+        adapter = self._make_adapter()
         ctx = _make_ctx(tenant_id="tenant_1")
-        results = await adapter.search_contacts(ctx, "أحمد")
+        results = asyncio.run(adapter.search_contacts(ctx, "أحمد"))
         assert len(results) == 1
         assert results[0].id == "c1"
 
-    @pytest.mark.asyncio
-    async def test_search_contacts_by_phone(self, adapter):
+    def test_search_contacts_by_phone(self):
+        import asyncio
+        adapter = self._make_adapter()
         ctx = _make_ctx(tenant_id="tenant_1")
-        results = await adapter.search_contacts(ctx, "+966501234567")
+        results = asyncio.run(adapter.search_contacts(ctx, "+966501234567"))
         assert len(results) == 1
 
-    @pytest.mark.asyncio
-    async def test_get_conversation(self, adapter):
+    def test_get_conversation(self):
+        import asyncio
+        adapter = self._make_adapter()
         ctx = _make_ctx(tenant_id="tenant_1")
-        conv = await adapter.get_conversation(ctx, "conv1")
+        conv = asyncio.run(adapter.get_conversation(ctx, "conv1"))
         assert conv is not None
         assert conv.channel == "whatsapp"
         assert len(conv.messages) == 1
 
-    @pytest.mark.asyncio
-    async def test_get_order(self, adapter):
+    def test_get_order(self):
+        import asyncio
+        adapter = self._make_adapter()
         ctx = _make_ctx(tenant_id="tenant_1")
-        order = await adapter.get_order(ctx, "ord1")
+        order = asyncio.run(adapter.get_order(ctx, "ord1"))
         assert order is not None
         assert order.platform == "salla"
         assert order.tracking_number == "SMSA-789"
 
-    @pytest.mark.asyncio
-    async def test_search_orders_by_tracking(self, adapter):
+    def test_search_orders_by_tracking(self):
+        import asyncio
+        adapter = self._make_adapter()
         ctx = _make_ctx(tenant_id="tenant_1")
-        orders = await adapter.search_orders(ctx, tracking_number="SMSA-789")
+        orders = asyncio.run(adapter.search_orders(ctx, tracking_number="SMSA-789"))
         assert len(orders) == 1
         assert orders[0].id == "ord1"
 
-    @pytest.mark.asyncio
-    async def test_send_reply(self, adapter):
+    def test_send_reply(self):
+        import asyncio
+        adapter = self._make_adapter()
         ctx = _make_ctx(tenant_id="tenant_1")
-        result = await adapter.send_reply(ctx, "conv1", "طلبك في الطريق!", "whatsapp")
+        result = asyncio.run(adapter.send_reply(ctx, "conv1", "طلبك في الطريق!", "whatsapp"))
         assert "message_id" in result
         assert len(adapter._sent_messages) == 1
         assert adapter._sent_messages[0]["tenant_id"] == "tenant_1"
 
-    @pytest.mark.asyncio
-    async def test_draft_reply(self, adapter):
+    def test_draft_reply(self):
+        import asyncio
+        adapter = self._make_adapter()
         ctx = _make_ctx(tenant_id="tenant_1")
-        result = await adapter.draft_reply(ctx, "conv1", "مسودة الرد")
+        result = asyncio.run(adapter.draft_reply(ctx, "conv1", "مسودة الرد"))
         assert "draft_id" in result
         assert len(adapter._drafts) == 1
 
-    @pytest.mark.asyncio
-    async def test_handoff(self, adapter):
+    def test_handoff(self):
+        import asyncio
+        adapter = self._make_adapter()
         ctx = _make_ctx(tenant_id="tenant_1")
-        result = await adapter.request_handoff(
+        result = asyncio.run(adapter.request_handoff(
             ctx, "conv1", "customer_request", "العميل طلب موظف"
-        )
+        ))
         assert "handoff_id" in result
         assert len(adapter._handoffs) == 1
 
-    @pytest.mark.asyncio
-    async def test_cross_tenant_message_isolation(self, adapter):
-        """Messages sent in tenant_1 scope stay in tenant_1."""
+    def test_cross_tenant_message_isolation(self):
+        import asyncio
+        adapter = self._make_adapter()
         ctx1 = _make_ctx(tenant_id="tenant_1")
-        ctx2 = _make_ctx(tenant_id="tenant_2")
-
-        await adapter.send_reply(ctx1, "conv1", "رسالة تينانت 1", "whatsapp")
-
-        # Both messages are in the global list but tagged with tenant_id
+        asyncio.run(adapter.send_reply(ctx1, "conv1", "رسالة تينانت 1", "whatsapp"))
         assert adapter._sent_messages[0]["tenant_id"] == "tenant_1"
