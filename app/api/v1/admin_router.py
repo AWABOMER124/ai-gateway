@@ -322,9 +322,102 @@ async def list_registered_tools(authorization: str = Header("")):
             "enabled": t.enabled,
             "timeout_seconds": t.timeout_seconds,
             "allowed_products": t.allowed_products,
+            "input_schema": t.input_schema,
         }
         for t in tools
     ]}
+
+
+# ── Tool Testing ──────────────────────────────────────────────────
+
+
+class ToolTestRequest(BaseModel):
+    tool: str = Field(..., description="Tool key to test")
+    params: dict = Field(default_factory=dict)
+    product: str = Field("qiad")
+    agent_mode: str = Field("autopilot")
+
+
+@router.post("/tools/test")
+async def test_tool(body: ToolTestRequest, authorization: str = Header("")):
+    _check_admin_auth(authorization)
+    from app.core.context import ExecutionContext, Actor, ActorType, Product, AgentMode
+    from app.tools.executor import execute_tool
+
+    try:
+        product = Product(body.product)
+        mode = AgentMode(body.agent_mode)
+    except ValueError as e:
+        return JSONResponse(status_code=400, content={"error": str(e)})
+
+    ctx = ExecutionContext(
+        tenant_id="admin-test",
+        product=product,
+        actor=Actor(type=ActorType.SYSTEM, id="admin-dashboard", permissions=("*",)),
+        agent_mode=mode,
+    )
+
+    start = time.monotonic()
+    try:
+        result = await execute_tool(ctx=ctx, tool_key=body.tool, params=body.params)
+        elapsed = int((time.monotonic() - start) * 1000)
+        return {"status": "ok", "tool": body.tool, "result": result, "elapsed_ms": elapsed}
+    except Exception as e:
+        elapsed = int((time.monotonic() - start) * 1000)
+        return JSONResponse(
+            status_code=400,
+            content={"status": "error", "tool": body.tool, "error": str(e), "elapsed_ms": elapsed},
+        )
+
+
+# ── API Summary ───────────────────────────────────────────────────
+
+
+@router.get("/api-summary")
+async def api_summary(authorization: str = Header("")):
+    _check_admin_auth(authorization)
+    from app.tools.registry import tool_registry
+    from app.providers.registry import provider_registry
+
+    tools = tool_registry.list_tools(enabled_only=False)
+    providers = provider_registry.list_all()
+
+    return {
+        "platform": "AI Core — Unified Intelligence Platform",
+        "version": "1.0.0",
+        "endpoints": {
+            "v1": {
+                "POST /api/v1/tools/call": "Execute a registered tool",
+                "GET /api/v1/tools": "List tools for caller's product",
+                "GET /api/v1/health": "Health check",
+                "GET /api/v1/context": "Debug: show JWT context",
+            },
+            "qiad": {
+                "POST /api/v1/qiad/agent": "QIAD agent chat endpoint",
+            },
+            "wasla": {
+                "GET /api/v1/wasla/projects": "List store projects",
+                "POST /api/v1/wasla/projects": "Create store project",
+                "POST /api/v1/wasla/projects/{id}/generate": "Generate store content",
+            },
+            "admin": {
+                "GET /api/v1/admin/health": "Full health check",
+                "GET /api/v1/admin/config": "Environment config status",
+                "GET /api/v1/admin/providers": "List providers",
+                "GET /api/v1/admin/tools": "List registered tools",
+                "POST /api/v1/admin/tools/test": "Test a tool",
+                "GET /api/v1/admin/cache/stats": "Cache statistics",
+                "POST /api/v1/admin/cache/clear": "Clear cache",
+                "GET /api/v1/admin/migrations": "Migration status",
+                "POST /api/v1/admin/generate-token": "Generate JWT",
+            },
+        },
+        "stats": {
+            "total_tools": len(tools),
+            "total_providers": len(providers),
+            "products": ["qiad", "wasla", "easy_delivery", "zawed", "legacy_personal"],
+        },
+    }
 
 
 # ── Migration Status ────────────────────────────────────────────────
@@ -491,6 +584,7 @@ h1{font-size:1.5rem;font-weight:700;margin-bottom:.25rem}
     <button class="tab" onclick="showTab('migrations',this)">Migrations</button>
     <button class="tab" onclick="showTab('providers',this)">Providers</button>
     <button class="tab" onclick="showTab('tools',this)">الأدوات</button>
+    <button class="tab" onclick="showTab('test',this)">تجربة أداة</button>
   </div>
 
   <div id="panel-health" class="panel active">
@@ -576,6 +670,24 @@ h1{font-size:1.5rem;font-weight:700;margin-bottom:.25rem}
     </div>
   </div>
 
+  <div id="panel-test" class="panel">
+    <div class="card">
+      <h2>تجربة أداة</h2>
+      <p style="font-size:.82rem;color:var(--ink2);margin-bottom:.75rem">اختبر أي أداة مسجلة مباشرة من الداشبورد</p>
+      <div class="form-row">
+        <div class="form-group"><label>اسم الأداة</label>
+          <select id="test-tool" onchange="onToolSelect()"><option value="">-- اختر أداة --</option></select>
+        </div>
+        <div class="form-group"><label>المنتج</label>
+          <select id="test-product"><option value="qiad">قياد</option><option value="wasla">وصلة</option><option value="easy_delivery">Easy Delivery</option><option value="zawed">زاود</option></select>
+        </div>
+      </div>
+      <div class="form-group"><label>المعاملات (JSON)</label><input id="test-params" dir="ltr" placeholder='{"key": "value"}' style="font-family:var(--mono)"></div>
+      <button class="btn" onclick="testTool()">تنفيذ</button>
+      <div id="test-result"></div>
+    </div>
+  </div>
+
   <div id="panel-migrations" class="panel">
     <div class="card">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem">
@@ -603,6 +715,7 @@ function showTab(id, btn) {
   if (id === 'tenants') loadTenants();
   if (id === 'providers') loadProviders();
   if (id === 'tools') loadTools();
+  if (id === 'test') populateToolSelect();
 }
 
 function pill(status) {
@@ -755,6 +868,48 @@ function loadTools() {
     }
     el.innerHTML = html;
   }).catch(function(e) { el.innerHTML = '<div class="empty" style="color:var(--err)">'+e.message+'</div>'; });
+}
+
+function onToolSelect() {
+  var key = document.getElementById('test-tool').value;
+  var hints = {
+    'weather.current': '{"latitude": 24.7136, "longitude": 46.6753}',
+    'weather.forecast': '{"latitude": 24.7136, "longitude": 46.6753, "days": 3}',
+    'currency.convert': '{"from_currency": "USD", "to_currency": "SAR", "amount": 100}',
+    'geo.geocode': '{"address": "Riyadh, Saudi Arabia"}',
+    'geo.reverse_geocode': '{"latitude": 24.7136, "longitude": 46.6753}',
+    'phone.validate': '{"phone_number": "+966501234567", "country_code": "SA"}',
+    'email.validate': '{"email": "test@example.com"}',
+  };
+  document.getElementById('test-params').value = hints[key] || '{}';
+}
+
+function populateToolSelect() {
+  fetch(BASE+'/tools', {headers:headers()}).then(function(r){return r.json()}).then(function(d) {
+    var sel = document.getElementById('test-tool');
+    var opts = '<option value="">-- اختر أداة --</option>';
+    for (var i = 0; i < d.tools.length; i++) {
+      var t = d.tools[i];
+      if (t.enabled) opts += '<option value="'+t.key+'">'+t.key+'</option>';
+    }
+    sel.innerHTML = opts;
+  });
+}
+
+function testTool() {
+  var el = document.getElementById('test-result');
+  var tool = document.getElementById('test-tool').value;
+  if (!tool) { el.innerHTML = '<div class="result" style="color:var(--err)">اختر أداة أولاً</div>'; return; }
+  var params;
+  try { params = JSON.parse(document.getElementById('test-params').value || '{}'); }
+  catch(e) { el.innerHTML = '<div class="result" style="color:var(--err)">JSON غير صالح</div>'; return; }
+  el.innerHTML = '<span class="spinner"></span>';
+  fetch(BASE+'/tools/test', {method:'POST', headers:headers(), body:JSON.stringify({
+    tool: tool, params: params, product: document.getElementById('test-product').value, agent_mode: 'autopilot'
+  })}).then(function(r){return r.json()}).then(function(d) {
+    var color = d.status === 'ok' ? 'var(--ok)' : 'var(--err)';
+    el.innerHTML = '<div class="result"><span style="color:'+color+'">'+d.status.toUpperCase()+'</span> ('+d.elapsed_ms+'ms)\\n\\n'+JSON.stringify(d.result || d.error, null, 2)+'</div>';
+  }).catch(function(e) { el.innerHTML = '<div class="result" style="color:var(--err)">'+e.message+'</div>'; });
 }
 
 function loadMigrations() {
