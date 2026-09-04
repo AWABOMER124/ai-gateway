@@ -123,6 +123,45 @@ def _create_version_sync(
     return version_id
 
 
+def _create_next_version_sync(
+    tenant_id: str,
+    project_id: str,
+    payload: dict,
+    prompt: Optional[str] = None,
+    generation_model: Optional[str] = None,
+    validation_errors: Optional[list] = None,
+) -> tuple[str, int]:
+    """Atomically allocate the next project version under a row lock."""
+    version_id = str(uuid.uuid4())
+    now = datetime.now(timezone.utc)
+    with pooled_cursor() as cur:
+        cur.execute(
+            "SELECT current_version FROM wasla_store_projects WHERE id = %s AND tenant_id = %s FOR UPDATE",
+            (project_id, tenant_id),
+        )
+        project = cur.fetchone()
+        if not project:
+            raise ValueError("Project not found")
+        version_number = int(project["current_version"]) + 1
+        cur.execute(
+            """
+            INSERT INTO wasla_store_versions
+                (id, project_id, tenant_id, version_number, payload, prompt, generation_model, validation_errors, created_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """,
+            (
+                version_id, project_id, tenant_id, version_number,
+                psycopg2.extras.Json(payload), prompt, generation_model,
+                psycopg2.extras.Json(validation_errors or []), now,
+            ),
+        )
+        cur.execute(
+            "UPDATE wasla_store_projects SET current_version = %s, updated_at = %s WHERE id = %s AND tenant_id = %s",
+            (version_number, now, project_id, tenant_id),
+        )
+    return version_id, version_number
+
+
 def _get_version_sync(tenant_id: str, version_id: str) -> Optional[dict]:
     with pooled_cursor(commit=False) as cur:
         cur.execute(
@@ -233,6 +272,9 @@ async def update_project_style(tenant_id: str, project_id: str, style: dict) -> 
 
 async def create_version(**kwargs) -> str:
     return await asyncio.to_thread(_create_version_sync, **kwargs)
+
+async def create_next_version(**kwargs) -> tuple[str, int]:
+    return await asyncio.to_thread(_create_next_version_sync, **kwargs)
 
 async def get_version(tenant_id: str, version_id: str) -> Optional[dict]:
     return await asyncio.to_thread(_get_version_sync, tenant_id, version_id)

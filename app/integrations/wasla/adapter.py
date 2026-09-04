@@ -152,15 +152,12 @@ class WaslaAdapter:
         payload = await generate_store_draft(generation_prompt, project.get("business_type"))
         validation_errors = payload.pop("_validation_errors", [])
 
-        new_version_number = project["current_version"] + 1
-
         if style_preferences:
             await store.update_project_style(ctx.tenant_id, project_id, style_preferences)
 
-        version_id = await store.create_version(
+        version_id, new_version_number = await store.create_next_version(
             tenant_id=ctx.tenant_id,
             project_id=project_id,
-            version_number=new_version_number,
             payload=payload,
             prompt=generation_prompt,
             generation_model=os.getenv("CHAT_MODEL", "gpt-4.1-mini"),
@@ -241,11 +238,9 @@ class WaslaAdapter:
         else:
             raise ToolExecutionFailed("wasla", f"Unsupported patch type: {patch_type}")
 
-        new_version_number = project["current_version"] + 1
-        new_version_id = await store.create_version(
+        new_version_id, new_version_number = await store.create_next_version(
             tenant_id=ctx.tenant_id,
             project_id=project_id,
-            version_number=new_version_number,
             payload=payload,
             prompt=version.get("prompt"),
             generation_model=version.get("generation_model"),
@@ -282,12 +277,10 @@ class WaslaAdapter:
         if not project or not source or str(source.get("project_id")) != project_id:
             raise ToolExecutionFailed("wasla", "Project version not found")
 
-        new_version_number = project["current_version"] + 1
         payload = copy.deepcopy(source.get("payload", {}))
-        version_id = await store.create_version(
+        version_id, new_version_number = await store.create_next_version(
             tenant_id=ctx.tenant_id,
             project_id=project_id,
-            version_number=new_version_number,
             payload=payload,
             prompt=source.get("prompt"),
             generation_model=source.get("generation_model"),

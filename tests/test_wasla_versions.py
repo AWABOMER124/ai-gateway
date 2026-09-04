@@ -23,9 +23,9 @@ def test_patch_creates_a_new_version_without_mutating_the_source(monkeypatch):
         "id": "version_1", "version_number": 1, "payload": {"name": "Old", "primaryColor": "#000000", "categories": []},
         "prompt": "store prompt", "generation_model": "test-model",
     }))
-    create_version = AsyncMock(return_value="version_2")
+    create_version = AsyncMock(return_value=("version_2", 2))
     add_patch = AsyncMock(return_value="patch_1")
-    monkeypatch.setattr(store, "create_version", create_version)
+    monkeypatch.setattr(store, "create_next_version", create_version)
     monkeypatch.setattr(store, "add_patch", add_patch)
 
     result = asyncio.run(WaslaAdapter().apply_patch(context(), "project_1", "edit_style", {"primaryColor": "#123456"}))
@@ -33,7 +33,7 @@ def test_patch_creates_a_new_version_without_mutating_the_source(monkeypatch):
     assert result["version_id"] == "version_2"
     assert result["version_number"] == 2
     assert result["payload"]["primaryColor"] == "#123456"
-    assert create_version.await_args.kwargs["version_number"] == 2
+    assert create_version.await_args.kwargs["project_id"] == "project_1"
     assert add_patch.await_args.kwargs["version_id"] == "version_2"
 
 
@@ -43,8 +43,8 @@ def test_restore_copies_only_a_version_owned_by_the_same_project(monkeypatch):
         "id": "version_1", "project_id": "project_1", "payload": {"name": "Original"},
         "prompt": "initial", "generation_model": "test-model", "validation_errors": [],
     }))
-    create_version = AsyncMock(return_value="version_4")
-    monkeypatch.setattr(store, "create_version", create_version)
+    create_version = AsyncMock(return_value=("version_4", 4))
+    monkeypatch.setattr(store, "create_next_version", create_version)
     monkeypatch.setattr(store, "add_patch", AsyncMock(return_value="patch_restore"))
 
     result = asyncio.run(WaslaAdapter().restore_version(context(), "project_1", "version_1"))
