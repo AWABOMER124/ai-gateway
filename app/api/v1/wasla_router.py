@@ -41,6 +41,10 @@ class PatchRequest(BaseModel):
     patch_data: dict[str, Any] = Field(default_factory=dict)
 
 
+class RestoreVersionRequest(BaseModel):
+    version_id: str = Field(..., min_length=1, max_length=100)
+
+
 class SubmitRequest(BaseModel):
     version_id: Optional[str] = None
 
@@ -180,6 +184,20 @@ async def apply_patch(
             patch_type=body.patch_type,
             patch_data=body.patch_data,
         )
+        return {"status": "ok", "request_id": ctx.request_id, **result}
+    except AICoreError as e:
+        return JSONResponse(status_code=e.http_status, content=e.to_response())
+
+
+@router.post("/projects/{project_id}/restore")
+async def restore_version(
+    project_id: str,
+    body: RestoreVersionRequest,
+    authorization: str = Header(...),
+):
+    ctx = await _extract_context(authorization)
+    try:
+        result = await _adapter.restore_version(ctx, project_id, body.version_id)
         return {"status": "ok", "request_id": ctx.request_id, **result}
     except AICoreError as e:
         return JSONResponse(status_code=e.http_status, content=e.to_response())

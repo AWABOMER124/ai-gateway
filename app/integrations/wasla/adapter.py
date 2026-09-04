@@ -185,11 +185,13 @@ class WaslaAdapter:
         from app.services import wasla_project_store as store
         import copy
 
+        project = await store.get_project(ctx.tenant_id, project_id)
         version = await store.get_latest_version(ctx.tenant_id, project_id)
-        if not version:
+        if not project or not version:
             raise ToolExecutionFailed("wasla", f"No versions found for project: {project_id}")
 
         payload = copy.deepcopy(version.get("payload", {}))
+        validation_errors = []
 
         if patch_type == "add_category":
             cats = payload.get("categories", [])
@@ -229,38 +231,83 @@ class WaslaAdapter:
         elif patch_type == "ai_refine":
             from app.agents.waslak_agent import generate_store_draft
             refinement_prompt = patch_data.get("prompt", "")
+            if not refinement_prompt.strip():
+                raise ToolExecutionFailed("wasla", "AI refinement prompt is required")
             original_prompt = version.get("prompt", "")
             combined = f"{original_prompt}\n\nتعديلات مطلوبة: {refinement_prompt}"
             refined = await generate_store_draft(combined, payload.get("business_type"))
-            refined.pop("_validation_errors", None)
+            validation_errors = refined.pop("_validation_errors", [])
             payload = refined
+        else:
+            raise ToolExecutionFailed("wasla", f"Unsupported patch type: {patch_type}")
 
+        new_version_number = project["current_version"] + 1
+        new_version_id = await store.create_version(
+            tenant_id=ctx.tenant_id,
+            project_id=project_id,
+            version_number=new_version_number,
+            payload=payload,
+            prompt=version.get("prompt"),
+            generation_model=version.get("generation_model"),
+            validation_errors=validation_errors,
+        )
         patch_id = await store.add_patch(
             tenant_id=ctx.tenant_id,
-            version_id=version["id"],
+            version_id=new_version_id,
             patch_type=patch_type,
             patch_data=patch_data,
             applied_by=ctx.actor.id,
         )
 
-        from app.services.db_pool import pooled_cursor
-        import asyncio
-        import psycopg2.extras
-
-        def _update():
-            with pooled_cursor() as cur:
-                cur.execute(
-                    "UPDATE wasla_store_versions SET payload = %s WHERE id = %s AND tenant_id = %s",
-                    (psycopg2.extras.Json(payload), version["id"], ctx.tenant_id),
-                )
-
-        await asyncio.to_thread(_update)
-
         return {
             "patch_id": patch_id,
             "patch_type": patch_type,
-            "version_id": version["id"],
+            "version_id": new_version_id,
+            "version_number": new_version_number,
             "payload": payload,
+        }
+
+    async def restore_version(
+        self,
+        ctx: ExecutionContext,
+        project_id: str,
+        source_version_id: str,
+    ) -> dict[str, Any]:
+        """Restore without mutation by copying an owned historical version into a new head."""
+        from app.services import wasla_project_store as store
+        import copy
+
+        project = await store.get_project(ctx.tenant_id, project_id)
+        source = await store.get_version(ctx.tenant_id, source_version_id)
+        if not project or not source or str(source.get("project_id")) != project_id:
+            raise ToolExecutionFailed("wasla", "Project version not found")
+
+        new_version_number = project["current_version"] + 1
+        payload = copy.deepcopy(source.get("payload", {}))
+        version_id = await store.create_version(
+            tenant_id=ctx.tenant_id,
+            project_id=project_id,
+            version_number=new_version_number,
+            payload=payload,
+            prompt=source.get("prompt"),
+            generation_model=source.get("generation_model"),
+            validation_errors=source.get("validation_errors", []),
+        )
+        patch_id = await store.add_patch(
+            tenant_id=ctx.tenant_id,
+            version_id=version_id,
+            patch_type="restore_version",
+            patch_data={"source_version_id": source_version_id},
+            applied_by=ctx.actor.id,
+        )
+        return {
+            "project_id": project_id,
+            "version_id": version_id,
+            "version_number": new_version_number,
+            "restored_from_version_id": source_version_id,
+            "patch_id": patch_id,
+            "payload": payload,
+            "validation_errors": source.get("validation_errors", []),
         }
 
     async def submit_to_waslak(
