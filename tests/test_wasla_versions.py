@@ -7,6 +7,7 @@ from app.core.context import Actor, ActorType, ExecutionContext, Product
 from app.core.errors import ToolExecutionFailed
 from app.integrations.wasla.adapter import WaslaAdapter
 from app.services import wasla_project_store as store
+from app.agents import waslak_agent
 
 
 def context(tenant_id: str = "merchant_1") -> ExecutionContext:
@@ -61,3 +62,15 @@ def test_restore_rejects_a_version_from_another_project(monkeypatch):
 
     with pytest.raises(ToolExecutionFailed):
         asyncio.run(WaslaAdapter().restore_version(context(), "project_1", "version_x"))
+
+
+def test_copilot_is_read_only_and_uses_the_supplied_snapshot(monkeypatch):
+    chat = AsyncMock(return_value="الطلبات مستقرة")
+    monkeypatch.setattr(waslak_agent, "_openai_chat", chat)
+    result = asyncio.run(waslak_agent.answer_merchant_question(
+        "كيف أداء المتجر؟", {"orders": {"DELIVERED": 8}, "customer_details": None}, "ar"
+    ))
+    assert result == "الطلبات مستقرة"
+    messages = chat.await_args.kwargs["messages"]
+    assert "read-only" in messages[0]["content"]
+    assert "DELIVERED" in messages[1]["content"]

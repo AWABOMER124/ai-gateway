@@ -7,6 +7,7 @@ Provides store project lifecycle: create → edit → submit → track.
 from __future__ import annotations
 
 import logging
+import json
 from typing import Any, Optional
 
 from fastapi import APIRouter, Header, Query
@@ -43,6 +44,12 @@ class PatchRequest(BaseModel):
 
 class RestoreVersionRequest(BaseModel):
     version_id: str = Field(..., min_length=1, max_length=100)
+
+
+class MerchantCopilotRequest(BaseModel):
+    question: str = Field(..., min_length=2, max_length=500)
+    snapshot: dict[str, Any]
+    language: str = Field("ar", pattern="^(ar|en)$")
 
 
 class SubmitRequest(BaseModel):
@@ -243,6 +250,22 @@ async def list_merchants(
     try:
         result = await _adapter.list_merchants(ctx)
         return {"request_id": ctx.request_id, **result}
+    except AICoreError as e:
+        return JSONResponse(status_code=e.http_status, content=e.to_response())
+
+
+@router.post("/copilot")
+async def merchant_copilot(
+    body: MerchantCopilotRequest,
+    authorization: str = Header(...),
+):
+    ctx = await _extract_context(authorization)
+    if len(json.dumps(body.snapshot, ensure_ascii=False)) > 100_000:
+        return JSONResponse(status_code=413, content={"error": {"code": "PAYLOAD_TOO_LARGE", "message": "Snapshot is too large"}})
+    try:
+        from app.agents.waslak_agent import answer_merchant_question
+        answer = await answer_merchant_question(body.question, body.snapshot, body.language)
+        return {"status": "ok", "request_id": ctx.request_id, "answer": answer}
     except AICoreError as e:
         return JSONResponse(status_code=e.http_status, content=e.to_response())
 
