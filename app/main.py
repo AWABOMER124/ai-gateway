@@ -6,7 +6,9 @@ Legacy endpoints (/agent/*, /waslak/*, /email/*, etc.) are preserved.
 New multi-tenant endpoints live under /api/v1/.
 """
 
+import hmac
 import logging
+import os
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -48,6 +50,27 @@ app.add_middleware(
     allow_methods=['*'],
     allow_headers=['*'],
 )
+
+
+@app.middleware('http')
+async def protect_v1_admin(request: Request, call_next):
+    """Fail closed for the operational admin API even if route-level auth is misconfigured."""
+    if request.url.path.startswith('/api/v1/admin'):
+        secret = os.getenv('AI_CORE_SERVICE_SECRET', '').strip()
+        if not secret:
+            return JSONResponse(
+                status_code=503,
+                content={'error': {'code': 'SERVICE_UNAVAILABLE', 'message': 'Admin API is disabled until AI_CORE_SERVICE_SECRET is configured'}},
+            )
+        authorization = request.headers.get('authorization', '')
+        token = authorization[7:].strip() if authorization.startswith('Bearer ') else ''
+        if not token or not hmac.compare_digest(token, secret):
+            return JSONResponse(
+                status_code=401,
+                content={'error': {'code': 'AUTH_FAILED', 'message': 'Invalid admin token'}},
+            )
+    return await call_next(request)
+
 
 app.include_router(health.router, tags=['System'])
 app.include_router(ask.router,    tags=['Ask'])

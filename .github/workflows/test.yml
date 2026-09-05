@@ -1,0 +1,27 @@
+name: AI Core tests
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - wasla-production-readiness
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - name: Install dependencies
+        run: pip install -r requirements.txt pytest
+      - name: Run tests
+        env:
+          AI_CORE_SECRET_WASLA: test-secret-wasla
+          AI_CORE_SERVICE_SECRET: test-admin-secret
+        run: pytest -q

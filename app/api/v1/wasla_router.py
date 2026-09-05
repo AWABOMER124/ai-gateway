@@ -6,8 +6,8 @@ Provides store project lifecycle: create → edit → submit → track.
 """
 from __future__ import annotations
 
-import logging
 import json
+import logging
 from typing import Any, Optional
 
 from fastapi import APIRouter, Header, Query
@@ -15,7 +15,8 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from app.api.v1.router import _extract_context
-from app.core.errors import AICoreError
+from app.core.context import ExecutionContext
+from app.core.errors import AICoreError, ToolPermissionDenied
 from app.integrations.wasla.adapter import WaslaAdapter
 
 logger = logging.getLogger(__name__)
@@ -23,6 +24,21 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/wasla", tags=["v1-wasla"])
 
 _adapter = WaslaAdapter()
+
+
+def _require_permission(ctx: ExecutionContext, permission: str) -> None:
+    """Enforce the permission carried by the verified Wasla service JWT."""
+    permissions = set(ctx.actor.permissions)
+    if "*" not in permissions and permission not in permissions:
+        raise ToolPermissionDenied(
+            permission,
+            message=f"Permission denied: {permission}",
+            request_id=ctx.request_id,
+        )
+
+
+def _error_response(error: AICoreError) -> JSONResponse:
+    return JSONResponse(status_code=error.http_status, content=error.to_response())
 
 
 class CreateProjectRequest(BaseModel):
@@ -63,6 +79,7 @@ async def create_project(
 ):
     ctx = await _extract_context(authorization)
     try:
+        _require_permission(ctx, "wasla.store_projects.create")
         result = await _adapter.create_store_project(
             ctx,
             merchant_description=body.merchant_description,
@@ -72,7 +89,7 @@ async def create_project(
         )
         return {"status": "ok", "request_id": ctx.request_id, **result}
     except AICoreError as e:
-        return JSONResponse(status_code=e.http_status, content=e.to_response())
+        return _error_response(e)
 
 
 @router.get("/projects")
@@ -82,22 +99,26 @@ async def list_projects(
     limit: int = Query(20, le=50),
 ):
     ctx = await _extract_context(authorization)
-    projects = await _adapter.list_projects(ctx, status=status, limit=limit)
-    return {
-        "count": len(projects),
-        "projects": [
-            {
-                "id": p["id"],
-                "name": p["name"],
-                "business_type": p.get("business_type"),
-                "status": p["status"],
-                "current_version": p["current_version"],
-                "created_at": str(p["created_at"]),
-                "updated_at": str(p["updated_at"]),
-            }
-            for p in projects
-        ],
-    }
+    try:
+        _require_permission(ctx, "wasla.store_projects.read")
+        projects = await _adapter.list_projects(ctx, status=status, limit=limit)
+        return {
+            "count": len(projects),
+            "projects": [
+                {
+                    "id": p["id"],
+                    "name": p["name"],
+                    "business_type": p.get("business_type"),
+                    "status": p["status"],
+                    "current_version": p["current_version"],
+                    "created_at": str(p["created_at"]),
+                    "updated_at": str(p["updated_at"]),
+                }
+                for p in projects
+            ],
+        }
+    except AICoreError as e:
+        return _error_response(e)
 
 
 @router.get("/projects/{project_id}")
@@ -106,35 +127,39 @@ async def get_project(
     authorization: str = Header(...),
 ):
     ctx = await _extract_context(authorization)
-    project = await _adapter.get_project_detail(ctx, project_id)
-    if not project:
-        return JSONResponse(status_code=404, content={"error": {"code": "RESOURCE_NOT_FOUND", "message": f"Project not found: {project_id}"}})
+    try:
+        _require_permission(ctx, "wasla.store_projects.read")
+        project = await _adapter.get_project_detail(ctx, project_id)
+        if not project:
+            return JSONResponse(status_code=404, content={"error": {"code": "RESOURCE_NOT_FOUND", "message": f"Project not found: {project_id}"}})
 
-    from app.services import wasla_project_store as store
-    latest = await store.get_latest_version(ctx.tenant_id, project_id)
+        from app.services import wasla_project_store as store
+        latest = await store.get_latest_version(ctx.tenant_id, project_id)
 
-    return {
-        "project": {
-            "id": project["id"],
-            "name": project["name"],
-            "description": project.get("description"),
-            "business_type": project.get("business_type"),
-            "style": project.get("style", {}),
-            "status": project["status"],
-            "current_version": project["current_version"],
-            "created_at": str(project["created_at"]),
-        },
-        "latest_version": {
-            "id": latest["id"],
-            "version_number": latest["version_number"],
-            "payload": latest.get("payload", {}),
-            "validation_errors": latest.get("validation_errors", []),
-            "status": latest["status"],
-            "waslak_draft_id": latest.get("waslak_draft_id"),
-            "waslak_status": latest.get("waslak_status"),
-            "created_at": str(latest["created_at"]),
-        } if latest else None,
-    }
+        return {
+            "project": {
+                "id": project["id"],
+                "name": project["name"],
+                "description": project.get("description"),
+                "business_type": project.get("business_type"),
+                "style": project.get("style", {}),
+                "status": project["status"],
+                "current_version": project["current_version"],
+                "created_at": str(project["created_at"]),
+            },
+            "latest_version": {
+                "id": latest["id"],
+                "version_number": latest["version_number"],
+                "payload": latest.get("payload", {}),
+                "validation_errors": latest.get("validation_errors", []),
+                "status": latest["status"],
+                "waslak_draft_id": latest.get("waslak_draft_id"),
+                "waslak_status": latest.get("waslak_status"),
+                "created_at": str(latest["created_at"]),
+            } if latest else None,
+        }
+    except AICoreError as e:
+        return _error_response(e)
 
 
 @router.get("/projects/{project_id}/versions")
@@ -143,21 +168,25 @@ async def list_versions(
     authorization: str = Header(...),
 ):
     ctx = await _extract_context(authorization)
-    versions = await _adapter.get_project_versions(ctx, project_id)
-    return {
-        "project_id": project_id,
-        "count": len(versions),
-        "versions": [
-            {
-                "id": v["id"],
-                "version_number": v["version_number"],
-                "status": v["status"],
-                "waslak_status": v.get("waslak_status"),
-                "created_at": str(v["created_at"]),
-            }
-            for v in versions
-        ],
-    }
+    try:
+        _require_permission(ctx, "wasla.store_projects.read")
+        versions = await _adapter.get_project_versions(ctx, project_id)
+        return {
+            "project_id": project_id,
+            "count": len(versions),
+            "versions": [
+                {
+                    "id": v["id"],
+                    "version_number": v["version_number"],
+                    "status": v["status"],
+                    "waslak_status": v.get("waslak_status"),
+                    "created_at": str(v["created_at"]),
+                }
+                for v in versions
+            ],
+        }
+    except AICoreError as e:
+        return _error_response(e)
 
 
 @router.post("/projects/{project_id}/regenerate")
@@ -168,6 +197,7 @@ async def regenerate_version(
 ):
     ctx = await _extract_context(authorization)
     try:
+        _require_permission(ctx, "wasla.store_projects.patch")
         result = await _adapter.regenerate_version(
             ctx, project_id,
             prompt=body.prompt,
@@ -175,7 +205,7 @@ async def regenerate_version(
         )
         return {"status": "ok", "request_id": ctx.request_id, **result}
     except AICoreError as e:
-        return JSONResponse(status_code=e.http_status, content=e.to_response())
+        return _error_response(e)
 
 
 @router.post("/projects/{project_id}/patch")
@@ -186,6 +216,7 @@ async def apply_patch(
 ):
     ctx = await _extract_context(authorization)
     try:
+        _require_permission(ctx, "wasla.store_projects.patch")
         result = await _adapter.apply_patch(
             ctx, project_id,
             patch_type=body.patch_type,
@@ -193,7 +224,7 @@ async def apply_patch(
         )
         return {"status": "ok", "request_id": ctx.request_id, **result}
     except AICoreError as e:
-        return JSONResponse(status_code=e.http_status, content=e.to_response())
+        return _error_response(e)
 
 
 @router.post("/projects/{project_id}/restore")
@@ -204,10 +235,11 @@ async def restore_version(
 ):
     ctx = await _extract_context(authorization)
     try:
+        _require_permission(ctx, "wasla.store_projects.restore")
         result = await _adapter.restore_version(ctx, project_id, body.version_id)
         return {"status": "ok", "request_id": ctx.request_id, **result}
     except AICoreError as e:
-        return JSONResponse(status_code=e.http_status, content=e.to_response())
+        return _error_response(e)
 
 
 @router.post("/projects/{project_id}/submit")
@@ -218,12 +250,13 @@ async def submit_project(
 ):
     ctx = await _extract_context(authorization)
     try:
+        _require_permission(ctx, "wasla.store_projects.submit")
         result = await _adapter.submit_to_waslak(
             ctx, project_id, version_id=body.version_id,
         )
         return {"status": "ok", "request_id": ctx.request_id, **result}
     except AICoreError as e:
-        return JSONResponse(status_code=e.http_status, content=e.to_response())
+        return _error_response(e)
 
 
 @router.get("/projects/{project_id}/status")
@@ -234,12 +267,13 @@ async def check_status(
 ):
     ctx = await _extract_context(authorization)
     try:
+        _require_permission(ctx, "wasla.store_projects.read")
         result = await _adapter.check_submission_status(
             ctx, project_id, version_id=version_id,
         )
         return {"request_id": ctx.request_id, **result}
     except AICoreError as e:
-        return JSONResponse(status_code=e.http_status, content=e.to_response())
+        return _error_response(e)
 
 
 @router.get("/merchants")
@@ -248,10 +282,11 @@ async def list_merchants(
 ):
     ctx = await _extract_context(authorization)
     try:
+        _require_permission(ctx, "wasla.merchants.read")
         result = await _adapter.list_merchants(ctx)
         return {"request_id": ctx.request_id, **result}
     except AICoreError as e:
-        return JSONResponse(status_code=e.http_status, content=e.to_response())
+        return _error_response(e)
 
 
 @router.post("/copilot")
@@ -260,14 +295,15 @@ async def merchant_copilot(
     authorization: str = Header(...),
 ):
     ctx = await _extract_context(authorization)
-    if len(json.dumps(body.snapshot, ensure_ascii=False)) > 100_000:
-        return JSONResponse(status_code=413, content={"error": {"code": "PAYLOAD_TOO_LARGE", "message": "Snapshot is too large"}})
     try:
+        _require_permission(ctx, "wasla.merchant_copilot.read")
+        if len(json.dumps(body.snapshot, ensure_ascii=False)) > 100_000:
+            return JSONResponse(status_code=413, content={"error": {"code": "PAYLOAD_TOO_LARGE", "message": "Snapshot is too large"}})
         from app.agents.waslak_agent import answer_merchant_question
         answer = await answer_merchant_question(body.question, body.snapshot, body.language)
         return {"status": "ok", "request_id": ctx.request_id, "answer": answer}
     except AICoreError as e:
-        return JSONResponse(status_code=e.http_status, content=e.to_response())
+        return _error_response(e)
 
 
 @router.get("/merchants/{merchant_id}/insights")
@@ -277,7 +313,8 @@ async def merchant_insights(
 ):
     ctx = await _extract_context(authorization)
     try:
+        _require_permission(ctx, "wasla.merchants.read")
         result = await _adapter.get_merchant_insights(ctx, merchant_id)
         return {"request_id": ctx.request_id, **result}
     except AICoreError as e:
-        return JSONResponse(status_code=e.http_status, content=e.to_response())
+        return _error_response(e)
