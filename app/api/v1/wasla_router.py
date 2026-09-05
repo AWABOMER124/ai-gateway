@@ -79,7 +79,7 @@ async def create_project(
 ):
     ctx = await _extract_context(authorization)
     try:
-        _require_permission(ctx, "wasla.store_projects.create")
+        _require_permission(ctx, "store.generate")
         result = await _adapter.create_store_project(
             ctx,
             merchant_description=body.merchant_description,
@@ -100,7 +100,7 @@ async def list_projects(
 ):
     ctx = await _extract_context(authorization)
     try:
-        _require_permission(ctx, "wasla.store_projects.read")
+        _require_permission(ctx, "store.view")
         projects = await _adapter.list_projects(ctx, status=status, limit=limit)
         return {
             "count": len(projects),
@@ -128,7 +128,7 @@ async def get_project(
 ):
     ctx = await _extract_context(authorization)
     try:
-        _require_permission(ctx, "wasla.store_projects.read")
+        _require_permission(ctx, "store.view")
         project = await _adapter.get_project_detail(ctx, project_id)
         if not project:
             return JSONResponse(status_code=404, content={"error": {"code": "RESOURCE_NOT_FOUND", "message": f"Project not found: {project_id}"}})
@@ -169,7 +169,7 @@ async def list_versions(
 ):
     ctx = await _extract_context(authorization)
     try:
-        _require_permission(ctx, "wasla.store_projects.read")
+        _require_permission(ctx, "store.view")
         versions = await _adapter.get_project_versions(ctx, project_id)
         return {
             "project_id": project_id,
@@ -197,7 +197,7 @@ async def regenerate_version(
 ):
     ctx = await _extract_context(authorization)
     try:
-        _require_permission(ctx, "wasla.store_projects.patch")
+        _require_permission(ctx, "store.generate")
         result = await _adapter.regenerate_version(
             ctx, project_id,
             prompt=body.prompt,
@@ -216,7 +216,7 @@ async def apply_patch(
 ):
     ctx = await _extract_context(authorization)
     try:
-        _require_permission(ctx, "wasla.store_projects.patch")
+        _require_permission(ctx, "store.generate")
         result = await _adapter.apply_patch(
             ctx, project_id,
             patch_type=body.patch_type,
@@ -235,7 +235,7 @@ async def restore_version(
 ):
     ctx = await _extract_context(authorization)
     try:
-        _require_permission(ctx, "wasla.store_projects.restore")
+        _require_permission(ctx, "store.generate")
         result = await _adapter.restore_version(ctx, project_id, body.version_id)
         return {"status": "ok", "request_id": ctx.request_id, **result}
     except AICoreError as e:
@@ -250,7 +250,7 @@ async def submit_project(
 ):
     ctx = await _extract_context(authorization)
     try:
-        _require_permission(ctx, "wasla.store_projects.submit")
+        _require_permission(ctx, "store.submit")
         result = await _adapter.submit_to_waslak(
             ctx, project_id, version_id=body.version_id,
         )
@@ -267,7 +267,7 @@ async def check_status(
 ):
     ctx = await _extract_context(authorization)
     try:
-        _require_permission(ctx, "wasla.store_projects.read")
+        _require_permission(ctx, "store.view")
         result = await _adapter.check_submission_status(
             ctx, project_id, version_id=version_id,
         )
@@ -282,7 +282,7 @@ async def list_merchants(
 ):
     ctx = await _extract_context(authorization)
     try:
-        _require_permission(ctx, "wasla.merchants.read")
+        _require_permission(ctx, "merchants.view")
         result = await _adapter.list_merchants(ctx)
         return {"request_id": ctx.request_id, **result}
     except AICoreError as e:
@@ -296,7 +296,7 @@ async def merchant_copilot(
 ):
     ctx = await _extract_context(authorization)
     try:
-        _require_permission(ctx, "wasla.merchant_copilot.read")
+        _require_permission(ctx, "merchants.view")
         if len(json.dumps(body.snapshot, ensure_ascii=False)) > 100_000:
             return JSONResponse(status_code=413, content={"error": {"code": "PAYLOAD_TOO_LARGE", "message": "Snapshot is too large"}})
         from app.agents.waslak_agent import answer_merchant_question
@@ -313,7 +313,7 @@ async def merchant_insights(
 ):
     ctx = await _extract_context(authorization)
     try:
-        _require_permission(ctx, "wasla.merchants.read")
+        _require_permission(ctx, "merchants.view")
         result = await _adapter.get_merchant_insights(ctx, merchant_id)
         return {"request_id": ctx.request_id, **result}
     except AICoreError as e:
