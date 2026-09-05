@@ -17,7 +17,10 @@ from app.routers import agent as agent_r, email as email_r, olivery as olivery_r
 from app.routers import waslak as waslak_r
 from app.routers import dashboard as dashboard_r
 from app.services.openai_usage import SpendLimitExceeded
-from app.core.admin_auth import is_valid_admin_authorization
+from app.core.admin_auth import (
+    is_same_origin_browser_request,
+    is_valid_admin_authorization,
+)
 from app.core.errors import AICoreError
 from app.api.v1.router import router as v1_router
 from app.api.v1.qiad_router import router as v1_qiad_router
@@ -68,6 +71,18 @@ async def protect_v1_admin(request: Request, call_next):
                 status_code=401,
                 content={'error': {'code': 'AUTH_FAILED', 'message': 'Invalid admin token'}},
                 headers={'WWW-Authenticate': 'Basic realm="AI Core Admin", charset="UTF-8"'},
+            )
+        if (
+            authorization.lower().startswith('basic ')
+            and request.method not in {'GET', 'HEAD', 'OPTIONS'}
+            and not is_same_origin_browser_request(
+                request.headers.get('origin', ''),
+                request.headers.get('host', ''),
+            )
+        ):
+            return JSONResponse(
+                status_code=403,
+                content={'error': {'code': 'CSRF_FAILED', 'message': 'Admin browser mutations require a same-origin request'}},
             )
     return await call_next(request)
 
