@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import binascii
 import hmac
+from urllib.parse import urlsplit
 
 
 def is_valid_admin_authorization(authorization: str, secret: str) -> bool:
@@ -33,4 +34,20 @@ def is_valid_admin_authorization(authorization: str, secret: str) -> bool:
         bool(separator)
         and hmac.compare_digest(username, "admin")
         and hmac.compare_digest(password, secret)
+    )
+
+
+def is_same_origin_browser_request(origin: str, host: str) -> bool:
+    """Validate an Origin header against the request Host for Basic-auth mutations."""
+    if not origin or not host:
+        return False
+
+    try:
+        parsed = urlsplit(origin)
+    except ValueError:
+        return False
+
+    return parsed.scheme in {"http", "https"} and hmac.compare_digest(
+        parsed.netloc.lower(),
+        host.lower(),
     )
