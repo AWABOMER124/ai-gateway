@@ -448,9 +448,9 @@ async def migration_status(authorization: str = Header("")):
         with pooled_cursor(commit=False) as cur:
             for table, migration in tables_to_check:
                 try:
-                    cur.execute(f"SELECT COUNT(*) FROM {table}")
+                    cur.execute(f"SELECT COUNT(*) AS row_count FROM {table}")
                     row = cur.fetchone()
-                    count = row[0] if row else 0
+                    count = row["row_count"] if row else 0
                     results.append({"table": table, "migration": migration, "exists": True, "rows": count})
                 except Exception:
                     results.append({"table": table, "migration": migration, "exists": False, "rows": 0})
