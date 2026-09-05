@@ -85,7 +85,7 @@ CREATE TABLE IF NOT EXISTS wasla_tenant_config (
 DO $$ BEGIN
     INSERT INTO wasla_store_projects (id, tenant_id, name, business_type, status, created_at)
     SELECT
-        id,
+        id::text,
         COALESCE(tenant_id, 'legacy'),
         COALESCE(payload->>'name', 'Untitled Store'),
         business_type,
@@ -103,8 +103,8 @@ END $$;
 DO $$ BEGIN
     INSERT INTO wasla_store_versions (id, project_id, tenant_id, version_number, payload, prompt, validation_errors, status, waslak_draft_id, waslak_status, rejection_reason, created_at)
     SELECT
-        id || '_v1',
-        id,
+        id::text || '_v1',
+        id::text,
         COALESCE(tenant_id, 'legacy'),
         1,
         COALESCE(payload, '{}'),
@@ -120,7 +120,7 @@ DO $$ BEGIN
         rejection_reason,
         created_at
     FROM waslak_store_drafts
-    WHERE id IN (SELECT id FROM wasla_store_projects)
+    WHERE id::text IN (SELECT id FROM wasla_store_projects)
     ON CONFLICT (id) DO NOTHING;
 EXCEPTION WHEN undefined_table THEN NULL;
 END $$;
