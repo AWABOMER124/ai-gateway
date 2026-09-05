@@ -20,22 +20,22 @@ def _ctx(permissions: list[str]) -> ExecutionContext:
 
 def test_allows_exact_permission():
     _require_permission(
-        _ctx(["wasla.store_projects.create"]),
-        "wasla.store_projects.create",
+        _ctx(["store.generate"]),
+        "store.generate",
     )
 
 
 def test_allows_wildcard_permission():
-    _require_permission(_ctx(["*"]), "wasla.store_projects.restore")
+    _require_permission(_ctx(["*"]), "store.generate")
 
 
 def test_denies_missing_permission():
     with pytest.raises(ToolPermissionDenied) as exc:
         _require_permission(
-            _ctx(["wasla.store_projects.create"]),
-            "wasla.store_projects.restore",
+            _ctx(["store.view"]),
+            "store.generate",
         )
 
     assert exc.value.http_status == 403
     assert exc.value.request_id == "req_1"
-    assert exc.value.details["tool"] == "wasla.store_projects.restore"
+    assert exc.value.details["tool"] == "store.generate"
