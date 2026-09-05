@@ -4,7 +4,7 @@ Admin API — health checks, config management, token generation.
 Served at /api/v1/admin. The HTML dashboard is embedded and served
 at GET /api/v1/admin/ so no template files are needed.
 
-Protected by AI_CORE_SERVICE_SECRET header check.
+Protected by AI_CORE_SERVICE_SECRET using Bearer or browser HTTP Basic auth.
 """
 from __future__ import annotations
 
@@ -19,6 +19,8 @@ from fastapi import APIRouter, Header, Query
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel, Field
 
+from app.core.admin_auth import is_valid_admin_authorization
+
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/admin", tags=["v1-admin"])
@@ -28,8 +30,7 @@ def _check_admin_auth(authorization: str):
     secret = os.getenv("AI_CORE_SERVICE_SECRET", "")
     if not secret:
         return
-    token = authorization.replace("Bearer ", "").strip() if authorization else ""
-    if token != secret:
+    if not is_valid_admin_authorization(authorization, secret):
         from app.core.errors import AuthError
         raise AuthError("Invalid admin token")
 
