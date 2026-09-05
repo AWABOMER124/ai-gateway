@@ -431,7 +431,9 @@ async def migration_status(authorization: str = Header("")):
     tables_to_check = [
         ("ai_tenants", "010_multi_tenant.sql"),
         ("ai_tenant_products", "010_multi_tenant.sql"),
-        ("ai_conversation_memory", "011_conversation_memory.sql"),
+        ("ai_conversation_summaries", "011_conversation_memory.sql"),
+        ("ai_customer_memory", "011_conversation_memory.sql"),
+        ("ai_runs", "011_conversation_memory.sql"),
         ("wasla_store_projects", "012_wasla_store_projects.sql"),
         ("wasla_store_versions", "012_wasla_store_projects.sql"),
         ("wasla_store_patches", "012_wasla_store_projects.sql"),
