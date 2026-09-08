@@ -10,13 +10,14 @@ import json
 import logging
 from typing import Any, Optional
 
-from fastapi import APIRouter, Header, Query
+import httpx
+from fastapi import APIRouter, File, Form, Header, Query, UploadFile
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from app.api.v1.router import _extract_context
 from app.core.context import ExecutionContext
-from app.core.errors import AICoreError, ToolPermissionDenied
+from app.core.errors import AICoreError, ToolExecutionFailed, ToolPermissionDenied, ValidationError
 from app.integrations.wasla.adapter import WaslaAdapter
 
 logger = logging.getLogger(__name__)
@@ -70,6 +71,45 @@ class MerchantCopilotRequest(BaseModel):
 
 class SubmitRequest(BaseModel):
     version_id: Optional[str] = None
+
+
+IMAGE_MODES = {"TRANSPARENT", "CLEAN_WHITE", "LIFESTYLE"}
+MAX_IMAGE_BYTES = 8 * 1024 * 1024
+
+
+def _product_image_prompt(mode: str, scene: str) -> str:
+    immutable = "Preserve the exact product identity, shape, proportions, colors, materials, labels, logos, packaging, and all readable text. Do not invent, remove, distort, recolor, or redesign any product detail."
+    if mode == "TRANSPARENT":
+        return f"{immutable} Precisely isolate the product, remove only its existing background, refine edges and natural contact shadows, and return a transparent background. Center the complete product with comfortable margins."
+    if mode == "CLEAN_WHITE":
+        return f"{immutable} Create a premium ecommerce studio photo on a seamless pure white background. Improve exposure, sharpness, color balance, edge quality, and add only a subtle realistic contact shadow. No props, text, watermark, border, or gradient."
+    return f"{immutable} Place the unchanged product in {scene or 'a tasteful premium environment appropriate for this product and its customer'}. Produce a photorealistic commercial product photograph with coherent scale, lighting, and natural shadows. No text, badges, watermarks, hands, people, or competing products."
+
+
+async def _enhance_product_image(image: bytes, mode: str, scene: str) -> dict[str, str]:
+    from app.config import settings
+    if not settings.openai_api_key:
+        raise ToolExecutionFailed("images.enhance", "Image provider is not configured")
+    transparent = mode == "TRANSPARENT"
+    model = __import__('os').getenv("AI_IMAGE_MODEL", "gpt-image-2")
+    form = {
+        "model": (None, model),
+        "prompt": (None, _product_image_prompt(mode, scene)),
+        "size": (None, "1024x1024"),
+        "quality": (None, "medium"),
+        "background": (None, "transparent" if transparent else "opaque"),
+        "output_format": (None, "png" if transparent else "webp"),
+        "image[]": ("product.webp", image, "image/webp"),
+    }
+    async with httpx.AsyncClient(timeout=120) as client:
+        response = await client.post("https://api.openai.com/v1/images/edits", headers={"Authorization": f"Bearer {settings.openai_api_key}"}, files=form)
+    if not response.is_success:
+        logger.warning("Image provider rejected request: %s", response.status_code)
+        raise ToolExecutionFailed("images.enhance", "Image enhancement provider failed")
+    encoded = (response.json().get("data") or [{}])[0].get("b64_json")
+    if not encoded:
+        raise ToolExecutionFailed("images.enhance", "Image enhancement returned no image")
+    return {"image_base64": encoded, "mime_type": "image/png" if transparent else "image/webp", "filename": "product-transparent.png" if transparent else "product-enhanced.webp", "model": model}
 
 
 @router.post("/projects")
@@ -302,6 +342,30 @@ async def merchant_copilot(
         from app.agents.waslak_agent import answer_merchant_question
         answer = await answer_merchant_question(body.question, body.snapshot, body.language)
         return {"status": "ok", "request_id": ctx.request_id, "answer": answer}
+    except AICoreError as e:
+        return _error_response(e)
+
+
+@router.post("/images/enhance")
+async def enhance_product_image(
+    image: UploadFile = File(...),
+    mode: str = Form(...),
+    scene: str = Form(""),
+    authorization: str = Header(...),
+):
+    """Enhance a product image through AI Core; provider credentials never leave AI Core."""
+    ctx = await _extract_context(authorization)
+    try:
+        _require_permission(ctx, "images.enhance")
+        if mode not in IMAGE_MODES:
+            raise ValidationError("Unsupported image enhancement mode")
+        if image.content_type not in {"image/jpeg", "image/png", "image/webp"}:
+            raise ValidationError("Only JPEG, PNG, and WebP product images are accepted")
+        source = await image.read(MAX_IMAGE_BYTES + 1)
+        if not source or len(source) > MAX_IMAGE_BYTES:
+            raise ValidationError("Product image must be between 1 byte and 8 MB")
+        result = await _enhance_product_image(source, mode, scene[:500])
+        return {"status": "ok", "request_id": ctx.request_id, **result}
     except AICoreError as e:
         return _error_response(e)
 
