@@ -80,7 +80,7 @@ MAX_IMAGE_BYTES = 8 * 1024 * 1024
 def _product_image_prompt(mode: str, scene: str) -> str:
     immutable = "Preserve the exact product identity, shape, proportions, colors, materials, labels, logos, packaging, and all readable text. Do not invent, remove, distort, recolor, or redesign any product detail."
     if mode == "TRANSPARENT":
-        return f"{immutable} Precisely isolate the product, remove only its existing background, refine edges and natural contact shadows, and return a transparent background. Center the complete product with comfortable margins."
+        return f"{immutable} Precisely isolate the product, remove only its existing background, refine edges and natural contact shadows, and return a transparent background. Center the complete product with comfortable margins. Do not add text, badges, borders, or watermarks."
     if mode == "CLEAN_WHITE":
         return f"{immutable} Create a premium ecommerce studio photo on a seamless pure white background. Improve exposure, sharpness, color balance, edge quality, and add only a subtle realistic contact shadow. No props, text, watermark, border, or gradient."
     return f"{immutable} Place the unchanged product in {scene or 'a tasteful premium environment appropriate for this product and its customer'}. Produce a photorealistic commercial product photograph with coherent scale, lighting, and natural shadows. No text, badges, watermarks, hands, people, or competing products."
